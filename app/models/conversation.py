@@ -29,6 +29,7 @@ class Conversation(Base):
     rolling_summary: Mapped[Optional[str]] = mapped_column(sa.Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now())
     updated_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now())
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(sa.DateTime(timezone=True), nullable=True, default=None)
 
     user: Mapped["User"] = relationship("User", back_populates="conversations")
     messages: Mapped[list["Message"]] = relationship("Message", back_populates="conversation")
