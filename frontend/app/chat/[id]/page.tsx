@@ -1,20 +1,90 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import Link from "next/link"
+import { useAuth } from "@clerk/nextjs"
 import useMessages from "@/hooks/useMessages"
+import useStream from "@/hooks/useStream"
+import { useConversations } from "@/hooks/useConversations"
+import MessageList from "@/components/chat/MessageList"
+import InputBar from "@/components/chat/InputBar"
 import type { Source } from "@/lib/types"
 
 export default function ConversationPage({ params }: { params: { id: string } }) {
+  const id = params.id
+  const { getToken } = useAuth()
   const { messages, isLoading, notFound, load, addMessage } = useMessages()
+  const { bumpToTop } = useConversations()
+
   const [streamingContent, setStreamingContent] = useState("")
   const [agentStatus, setAgentStatus] = useState<string | null>(null)
   const [streamingSources, setStreamingSources] = useState<Source[]>([])
-  const [isStreaming, setIsStreaming] = useState(false)
+
+  // Ref tracks accumulated content so onDone never has a stale closure
+  const streamingContentRef = useRef("")
+
+  const { startStream, isStreaming } = useStream({
+    onToken: useCallback((token: string) => {
+      streamingContentRef.current += token
+      setStreamingContent(streamingContentRef.current)
+    }, []),
+
+    onNodeUpdate: useCallback((node: string) => {
+      setAgentStatus(node)
+    }, []),
+
+    onSources: useCallback((sources: Source[]) => {
+      setStreamingSources(sources)
+    }, []),
+
+    onDone: useCallback(
+      (messageId: string | null) => {
+        addMessage({
+          id: messageId ?? crypto.randomUUID(),
+          conversation_id: id,
+          role: "assistant",
+          content: streamingContentRef.current,
+          created_at: new Date().toISOString(),
+        })
+        streamingContentRef.current = ""
+        setStreamingContent("")
+        setAgentStatus(null)
+        bumpToTop(id)
+      },
+      [addMessage, bumpToTop, id],
+    ),
+
+    onError: useCallback((err: Error) => {
+      console.error("[useStream] error", err)
+      setAgentStatus(null)
+      streamingContentRef.current = ""
+      setStreamingContent("")
+    }, []),
+  })
 
   useEffect(() => {
-    load(params.id)
-  }, [params.id, load])
+    load(id)
+  }, [id, load])
+
+  const handleSend = useCallback(
+    async (message: string) => {
+      const token = await getToken()
+      if (!token) return
+      addMessage({
+        id: crypto.randomUUID(),
+        conversation_id: id,
+        role: "user",
+        content: message,
+        created_at: new Date().toISOString(),
+      })
+      streamingContentRef.current = ""
+      setStreamingContent("")
+      setAgentStatus(null)
+      setStreamingSources([])
+      await startStream(id, message, token)
+    },
+    [getToken, addMessage, id, startStream],
+  )
 
   if (notFound) {
     return (
@@ -36,16 +106,15 @@ export default function ConversationPage({ params }: { params: { id: string } })
   }
 
   return (
-    <div className="flex-1 flex flex-col min-h-0">
-      {/* MessageList — wired in Step 14 */}
-      <div className="flex-1 overflow-y-auto p-4 text-muted-foreground text-sm">
-        {messages.length} message{messages.length !== 1 ? "s" : ""} loaded
-      </div>
-
-      {/* InputBar — wired in Step 15 */}
-      <div className="border-t border-border px-4 py-3 text-muted-foreground text-sm">
-        Input goes here
-      </div>
+    <div className="flex flex-col h-full">
+      <MessageList
+        messages={messages}
+        streamingContent={streamingContent}
+        agentStatus={agentStatus}
+        streamingSources={streamingSources}
+        isStreaming={isStreaming}
+      />
+      <InputBar onSend={handleSend} disabled={isStreaming} />
     </div>
   )
 }
