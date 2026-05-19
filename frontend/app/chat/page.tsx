@@ -1,16 +1,36 @@
-import { auth } from "@clerk/nextjs/server";
-import { redirect } from "next/navigation";
+"use client"
 
-export default async function ChatPage() {
-  const { userId } = await auth();
+import { useEffect } from "react"
+import { useRouter } from "next/navigation"
+import { useConversations } from "@/hooks/useConversations"
 
-  if (!userId) {
-    redirect("/sign-in");
+export default function ChatPage() {
+  const router = useRouter()
+  const { conversations, isLoading } = useConversations()
+
+  useEffect(() => {
+    if (!isLoading && conversations.length > 0) {
+      router.replace(`/chat/${conversations[0].id}`)
+    }
+  }, [isLoading, conversations, router])
+
+  if (isLoading) {
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <span className="text-muted-foreground text-sm">Loading…</span>
+      </div>
+    )
   }
 
-  return (
-    <main className="flex min-h-screen items-center justify-center">
-      <div className="text-xl font-medium text-slate-700">Chat coming soon</div>
-    </main>
-  );
+  if (conversations.length === 0) {
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <p className="text-muted-foreground text-sm">
+          Ask me anything about a company, filing, or market event.
+        </p>
+      </div>
+    )
+  }
+
+  return null
 }
