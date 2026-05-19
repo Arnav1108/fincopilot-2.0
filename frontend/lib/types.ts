@@ -1,0 +1,49 @@
+export interface ConversationRead {
+  id: string
+  title: string
+  created_at: string
+  updated_at: string
+}
+
+export interface MessageRead {
+  id: string
+  conversation_id: string
+  role: "user" | "assistant"
+  content: string
+  created_at: string
+}
+
+export interface Source {
+  title: string
+  url: string
+}
+
+export type InvestmentStyle = "growth" | "value" | "blend"
+export type OutputFormat = "concise" | "detailed" | "bullet_points"
+
+export interface ProfileRead {
+  id: string
+  user_id: string
+  sectors: string[]
+  tracked_tickers: string[]
+  investment_style: InvestmentStyle | null
+  preferred_output_format: OutputFormat | null
+  custom_context: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface ProfileUpdate {
+  sectors?: string[]
+  tracked_tickers?: string[]
+  investment_style?: InvestmentStyle | null
+  preferred_output_format?: OutputFormat | null
+  custom_context?: string | null
+}
+
+export type SseEvent =
+  | { event: "node_update"; data: { node: string; status: string } }
+  | { event: "tool_call"; data: { tool: string; input: Record<string, unknown> } }
+  | { event: "sources"; data: { sources: Source[] } }
+  | { event: "token"; data: { token: string } }
+  | { event: "done"; data: { message_id: string | null } }
