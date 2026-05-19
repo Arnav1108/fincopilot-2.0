@@ -2,35 +2,8 @@
 
 import { cn } from "@/lib/utils"
 import type { MessageRead, Source } from "@/lib/types"
-
-// Placeholder — replaced by components/chat/AgentStatus.tsx in Step 17
-function AgentStatus({ node }: { node: string }) {
-  return (
-    <span className="text-xs text-muted-foreground">
-      {node}...
-    </span>
-  )
-}
-
-// Placeholder — replaced by components/chat/SourceList.tsx in Step 18
-function SourceList({ sources }: { sources: Source[] }) {
-  return (
-    <div className="mt-2 space-y-0.5">
-      <p className="text-xs font-medium text-muted-foreground">Sources</p>
-      {sources.map((s, i) => (
-        <a
-          key={i}
-          href={s.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="block text-xs text-muted-foreground underline hover:text-foreground truncate"
-        >
-          {s.title}
-        </a>
-      ))}
-    </div>
-  )
-}
+import AgentStatus from "./AgentStatus"
+import SourceList from "./SourceList"
 
 interface Props {
   message: MessageRead
