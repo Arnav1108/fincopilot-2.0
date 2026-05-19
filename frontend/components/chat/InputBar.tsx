@@ -42,60 +42,62 @@ export default function InputBar({ onSend, disabled }: Props) {
   }
 
   return (
-    <div className="shrink-0 border-t border-border bg-background px-4 py-3">
-      {/* Toolbar row */}
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-1">
+    <div className="px-4 pb-6 pt-2">
+      <div className="max-w-3xl mx-auto rounded-2xl border border-border bg-card shadow-lg">
+        {/* Textarea */}
+        <textarea
+          ref={textareaRef}
+          value={value}
+          onChange={handleChange}
+          onKeyDown={handleKeyDown}
+          disabled={disabled}
+          placeholder="Ask me anything…"
+          rows={1}
+          style={{ height: "auto", resize: "none" }}
+          className="w-full bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none disabled:cursor-not-allowed px-4 pt-3 pb-1"
+        />
+
+        {/* Bottom toolbar */}
+        <div className="flex items-center justify-between px-3 pb-3 pt-1">
+          <div className="flex items-center gap-1">
+            <button
+              disabled
+              className="p-1.5 rounded-md text-muted-foreground cursor-not-allowed opacity-50"
+              aria-label="Attach file"
+            >
+              <Paperclip size={16} />
+            </button>
+            <button
+              disabled
+              className="p-1.5 rounded-md text-muted-foreground cursor-not-allowed opacity-50"
+              aria-label="SEC filing"
+            >
+              <FileText size={16} />
+            </button>
+            <button
+              disabled
+              className="p-1.5 rounded-md text-muted-foreground cursor-not-allowed opacity-50"
+              aria-label="Peer comparison"
+            >
+              <BarChart2 size={16} />
+            </button>
+          </div>
+
           <button
-            disabled
-            className="p-1.5 rounded-md text-muted-foreground cursor-not-allowed opacity-50"
-            aria-label="Attach file"
+            onClick={submit}
+            disabled={!canSend}
+            className={cn(
+              "p-1.5 rounded-full transition-colors",
+              canSend
+                ? "bg-foreground text-background hover:bg-foreground/90"
+                : "text-muted-foreground cursor-not-allowed opacity-50",
+            )}
+            aria-label="Send message"
           >
-            <Paperclip size={16} />
-          </button>
-          <button
-            disabled
-            className="p-1.5 rounded-md text-muted-foreground cursor-not-allowed opacity-50"
-            aria-label="SEC filing"
-          >
-            <FileText size={16} />
-          </button>
-          <button
-            disabled
-            className="p-1.5 rounded-md text-muted-foreground cursor-not-allowed opacity-50"
-            aria-label="Peer comparison"
-          >
-            <BarChart2 size={16} />
+            <ArrowUp size={16} />
           </button>
         </div>
-
-        <button
-          onClick={submit}
-          disabled={!canSend}
-          className={cn(
-            "p-1.5 rounded-md transition-colors",
-            canSend
-              ? "bg-primary text-primary-foreground hover:bg-primary/90"
-              : "text-muted-foreground cursor-not-allowed opacity-50",
-          )}
-          aria-label="Send message"
-        >
-          <ArrowUp size={16} />
-        </button>
       </div>
-
-      {/* Textarea */}
-      <textarea
-        ref={textareaRef}
-        value={value}
-        onChange={handleChange}
-        onKeyDown={handleKeyDown}
-        disabled={disabled}
-        placeholder="Ask me anything…"
-        rows={1}
-        style={{ height: "auto", resize: "none" }}
-        className="w-full bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none disabled:cursor-not-allowed"
-      />
     </div>
   )
 }

@@ -20,7 +20,7 @@ export default function MessageBubble({ message, agentStatus, sources, isStreami
   if (isUser) {
     return (
       <div className="flex justify-end">
-        <div className="bg-primary text-primary-foreground rounded-2xl px-4 py-2 max-w-[70%] text-sm">
+        <div className="bg-muted text-foreground rounded-3xl px-4 py-3 max-w-[85%] text-sm leading-relaxed">
           {message.content}
         </div>
       </div>
@@ -28,8 +28,8 @@ export default function MessageBubble({ message, agentStatus, sources, isStreami
   }
 
   return (
-    <div className="flex flex-col items-start gap-1 max-w-[80%]">
-      <div className={cn("text-sm text-foreground", isEmpty && "text-muted-foreground")}>
+    <div className="flex flex-col gap-2">
+      <div className={cn("text-sm text-foreground leading-relaxed", isEmpty && "text-muted-foreground")}>
         {isEmpty ? "..." : message.content}
       </div>
       {agentStatus && <AgentStatus node={agentStatus} />}

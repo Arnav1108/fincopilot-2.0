@@ -106,7 +106,7 @@ export default function ConversationPage({ params }: { params: { id: string } })
   }
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex-1 flex flex-col min-h-0">
       <MessageList
         messages={messages}
         streamingContent={streamingContent}

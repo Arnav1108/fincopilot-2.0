@@ -42,16 +42,16 @@ export default function MessageList({
     <div
       ref={containerRef}
       onScroll={handleScroll}
-      className="flex-1 overflow-y-auto px-4 py-6 space-y-4"
+      className="flex-1 overflow-y-auto"
     >
       {isEmpty ? (
-        <div className="h-full flex items-center justify-center">
+        <div className="h-full flex items-center justify-center px-4">
           <p className="text-muted-foreground text-sm text-center">
             Ask me anything about a company, filing, or market event.
           </p>
         </div>
       ) : (
-        <>
+        <div className="max-w-3xl mx-auto px-4 py-6 space-y-6">
           {messages.map((msg) => (
             <MessageBubble key={msg.id} message={msg} />
           ))}
@@ -71,7 +71,7 @@ export default function MessageList({
               isStreaming={true}
             />
           )}
-        </>
+        </div>
       )}
     </div>
   )
