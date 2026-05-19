@@ -9,9 +9,9 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 
 from app.api.auth import clerk_auth
 from app.database import get_db
-from app.models.conversation import Conversation
+from app.models.conversation import Conversation, Message
 from app.models.user import User
-from app.schemas.conversation import ConversationRead, ConversationUpdate
+from app.schemas.conversation import ConversationRead, ConversationUpdate, MessageRead
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)
@@ -95,7 +95,7 @@ async def delete_conversation(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@router.get("/{conversation_id}/messages")
+@router.get("/{conversation_id}/messages", response_model=list[MessageRead])
 async def list_messages(
     conversation_id: uuid.UUID,
     user: User = Depends(clerk_auth),
@@ -111,4 +111,9 @@ async def list_messages(
     if conv is None:
         logger.warning("conversation_not_found", conversation_id=str(conversation_id), user_id=str(user.id))
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
-    return []
+    msg_result = await db.execute(
+        select(Message)
+        .where(Message.conversation_id == conversation_id)
+        .order_by(Message.created_at.asc())
+    )
+    return [MessageRead.model_validate(m) for m in msg_result.scalars().all()]
