@@ -41,10 +41,10 @@ class AnalystProfile(Base):
     sectors_of_interest: Mapped[Optional[list]] = mapped_column(ARRAY(sa.Text()), nullable=True)
     tracked_tickers: Mapped[Optional[list]] = mapped_column(ARRAY(sa.Text()), nullable=True)
     investment_style: Mapped[Optional[str]] = mapped_column(
-        ENUM(name="investment_style_enum", create_type=False), nullable=True
+        ENUM("growth", "value", "blend", name="investment_style_enum", create_type=False), nullable=True
     )
     preferred_output_format: Mapped[Optional[str]] = mapped_column(
-        ENUM(name="output_format_enum", create_type=False), nullable=True
+        ENUM("concise", "detailed", "bullet_points", name="output_format_enum", create_type=False), nullable=True
     )
     custom_context: Mapped[Optional[str]] = mapped_column(sa.Text, nullable=True)
     preferred_output_length: Mapped[Optional[str]] = mapped_column(sa.Text, nullable=True)
