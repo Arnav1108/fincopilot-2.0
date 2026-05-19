@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Optional
 
 import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import ARRAY, UUID
+from sqlalchemy.dialects.postgresql import ARRAY, ENUM, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -39,6 +39,14 @@ class AnalystProfile(Base):
     firm: Mapped[Optional[str]] = mapped_column(sa.Text, nullable=True)
     role: Mapped[Optional[str]] = mapped_column(sa.Text, nullable=True)
     sectors_of_interest: Mapped[Optional[list]] = mapped_column(ARRAY(sa.Text()), nullable=True)
+    tracked_tickers: Mapped[Optional[list]] = mapped_column(ARRAY(sa.Text()), nullable=True)
+    investment_style: Mapped[Optional[str]] = mapped_column(
+        ENUM("growth", "value", "blend", name="investment_style_enum", create_type=False), nullable=True
+    )
+    preferred_output_format: Mapped[Optional[str]] = mapped_column(
+        ENUM("concise", "detailed", "bullet_points", name="output_format_enum", create_type=False), nullable=True
+    )
+    custom_context: Mapped[Optional[str]] = mapped_column(sa.Text, nullable=True)
     preferred_output_length: Mapped[Optional[str]] = mapped_column(sa.Text, nullable=True)
     preferred_citation_style: Mapped[Optional[str]] = mapped_column(sa.Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now())
