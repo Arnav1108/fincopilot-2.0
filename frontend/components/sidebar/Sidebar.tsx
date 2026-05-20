@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation"
 import { Plus, Settings } from "lucide-react"
 import { useConversations } from "@/hooks/useConversations"
 import ConversationGroup from "./ConversationGroup"
+import SettingsModal from "@/components/settings/SettingsModal"
 import type { ConversationRead } from "@/lib/types"
 
 const MS_PER_DAY = 86_400_000
@@ -119,20 +120,7 @@ export default function Sidebar() {
         </div>
       </aside>
 
-      {/* SettingsModal will be rendered here in Phase 5 */}
-      {settingsOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="bg-card border border-border rounded-xl p-6 text-foreground text-sm">
-            Settings coming soon.{" "}
-            <button
-              className="underline text-muted-foreground"
-              onClick={() => setSettingsOpen(false)}
-            >
-              Close
-            </button>
-          </div>
-        </div>
-      )}
+      <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </>
   )
 }
