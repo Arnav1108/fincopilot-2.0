@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
     CLERK_WEBHOOK_SECRET: str = ""
     APP_ENV: str = "development"
+    MAX_UPLOAD_BYTES: int = 50_000_000
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 
