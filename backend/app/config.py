@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     CLERK_WEBHOOK_SECRET: str = ""
     APP_ENV: str = "development"
     MAX_UPLOAD_BYTES: int = 50_000_000
+    TAVILY_API_KEY: str = ""
+    SEC_EDGAR_CONTACT_EMAIL: str = ""
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 
