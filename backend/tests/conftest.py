@@ -46,6 +46,12 @@ async def setup_test_db():
         await conn.execute(text(
             "CREATE TYPE document_status AS ENUM ('pending', 'processing', 'ready', 'failed')"
         ))
+        await conn.execute(text(
+            "CREATE TYPE investment_style_enum AS ENUM ('growth', 'value', 'blend')"
+        ))
+        await conn.execute(text(
+            "CREATE TYPE output_format_enum AS ENUM ('concise', 'detailed', 'bullet_points')"
+        ))
         await conn.run_sync(Base.metadata.create_all)
     yield
     await _engine.dispose()
