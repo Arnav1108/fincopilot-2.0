@@ -51,6 +51,7 @@ class Document(Base):
         default=DocumentStatus.pending,
         server_default="pending",
     )
+    chunk_count: Mapped[Optional[int]] = mapped_column(sa.Integer, nullable=True)
     error_message: Mapped[Optional[str]] = mapped_column(sa.Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now())
     updated_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now())
