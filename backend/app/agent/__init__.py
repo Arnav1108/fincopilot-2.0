@@ -10,6 +10,7 @@ from app.agent.state import (
     RecentMessage,
 )
 from app.agent.synthesizer import synthesizer_node
+from app.agent.graph import compiled_graph
 
 __all__ = [
     "AgentState",
@@ -22,4 +23,5 @@ __all__ = [
     "executor_node",
     "evaluator_node",
     "synthesizer_node",
+    "compiled_graph",
 ]
