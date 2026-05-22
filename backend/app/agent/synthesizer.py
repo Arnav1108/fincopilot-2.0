@@ -4,6 +4,7 @@ import openai
 import structlog
 
 from app.agent.state import AgentState
+from app.agent.stream_context import emit_event
 from app.config import settings
 
 _SYSTEM_PROMPT = """\
@@ -20,6 +21,7 @@ Rules:
 
 async def synthesizer_node(state: AgentState) -> dict:
     logger = structlog.get_logger(__name__)
+    emit_event({"type": "node_update", "node": "synthesizer_node", "status": "running"})
     try:
         reranked_chunks = state.get("reranked_chunks") or []
         if not reranked_chunks:
@@ -69,6 +71,7 @@ async def synthesizer_node(state: AgentState) -> dict:
         async for chunk in response:
             delta = chunk.choices[0].delta.content
             if delta:
+                emit_event({"type": "token", "token": delta})
                 tokens.append(delta)
 
         final_output = "".join(tokens)

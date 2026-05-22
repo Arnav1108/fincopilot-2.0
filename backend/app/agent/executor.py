@@ -7,22 +7,31 @@ from typing import Any
 import structlog
 
 from app.agent.state import AgentState, ChunkDict
+from app.agent.stream_context import emit_event
 from app.tools import TOOL_REGISTRY, ToolError
 
 
 async def executor_node(state: AgentState) -> dict:
     logger = structlog.get_logger(__name__)
+    emit_event({"type": "node_update", "node": "executor_node", "status": "running"})
     try:
         classification = state["classification"]
         existing_tool_results: dict[str, Any] = dict(state.get("tool_results") or {})
 
         if classification in ("simple", "ingest"):
-            raw = await TOOL_REGISTRY["document_retrieval"](
-                {"query": state["query"], "user_id": state["user_id"]}
-            )
+            emit_event({"type": "tool_call", "tool_name": "document_retrieval", "step_id": "retrieval", "status": "running"})
+            try:
+                raw = await TOOL_REGISTRY["document_retrieval"](
+                    {"query": state["query"], "user_id": state["user_id"]}
+                )
+                emit_event({"type": "tool_call", "tool_name": "document_retrieval", "step_id": "retrieval", "status": "complete"})
+            except Exception:
+                emit_event({"type": "tool_call", "tool_name": "document_retrieval", "step_id": "retrieval", "status": "error"})
+                raise
             chunks = _normalize_chunks(raw)
             chunks = _dedup_chunks(chunks)
             reranked_chunks = chunks  # TODO: replace with real reranker in feature/agent-stream
+            emit_event({"type": "sources", "chunks": reranked_chunks})
             logger.debug(
                 "executor_completed",
                 step_count=1,
@@ -55,6 +64,7 @@ async def executor_node(state: AgentState) -> dict:
 
             async def _run_step(step_id: str) -> tuple[str, Any]:
                 step = step_map[step_id]
+                emit_event({"type": "tool_call", "tool_name": step["tool_name"], "step_id": step_id, "status": "running"})
                 rendered = step["input_template"].format_map(
                     {
                         "query": state["query"],
@@ -72,6 +82,7 @@ async def executor_node(state: AgentState) -> dict:
                         tool_input = {"input": rendered}
 
                     result = await TOOL_REGISTRY[step["tool_name"]](tool_input)
+                    emit_event({"type": "tool_call", "tool_name": step["tool_name"], "step_id": step_id, "status": "complete"})
                     return step_id, result
                 except ToolError as e:
                     logger.warning(
@@ -80,6 +91,7 @@ async def executor_node(state: AgentState) -> dict:
                         step_id=step_id,
                         error=str(e),
                     )
+                    emit_event({"type": "tool_call", "tool_name": step["tool_name"], "step_id": step_id, "status": "error"})
                     return step_id, {"error": str(e)}
 
             results = await asyncio.gather(*[_run_step(sid) for sid in ready])
@@ -102,6 +114,7 @@ async def executor_node(state: AgentState) -> dict:
 
         chunks = _dedup_chunks(all_chunks)
         reranked_chunks = chunks  # TODO: replace with real reranker in feature/agent-stream
+        emit_event({"type": "sources", "chunks": reranked_chunks})
 
         merged = {**tool_results, **existing_tool_results}
 

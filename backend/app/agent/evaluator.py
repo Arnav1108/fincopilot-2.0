@@ -4,6 +4,7 @@ import openai
 import structlog
 
 from app.agent.state import AgentState
+from app.agent.stream_context import emit_event
 from app.config import settings
 
 _SCORE_SYSTEM_PROMPT = """\
@@ -29,6 +30,7 @@ Return ONLY the reformulated query string. No explanation, no extra text.\
 
 async def evaluator_node(state: AgentState) -> dict:
     logger = structlog.get_logger(__name__)
+    emit_event({"type": "node_update", "node": "evaluator_node", "status": "running"})
     try:
         reranked_chunks = state.get("reranked_chunks") or []
         if not reranked_chunks:

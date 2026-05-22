@@ -4,6 +4,7 @@ import openai
 import structlog
 
 from app.agent.state import AgentState
+from app.agent.stream_context import emit_event
 from app.config import settings
 
 _SYSTEM_PROMPT = """\
@@ -39,6 +40,7 @@ Respond with only one word: simple, complex, or ingest.\
 
 async def router_node(state: AgentState) -> dict:
     logger = structlog.get_logger(__name__)
+    emit_event({"type": "node_update", "node": "router_node", "status": "running"})
     try:
         client = openai.AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
 

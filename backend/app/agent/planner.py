@@ -7,6 +7,7 @@ import openai
 import structlog
 
 from app.agent.state import AgentState, PlanStep
+from app.agent.stream_context import emit_event
 from app.config import settings
 from app.tools import TOOL_REGISTRY
 
@@ -65,6 +66,7 @@ def _extract_raw_steps(parsed: Any, logger: Any, raw_content: str) -> list[dict]
 
 async def planner_node(state: AgentState) -> dict:
     logger = structlog.get_logger(__name__)
+    emit_event({"type": "node_update", "node": "planner_node", "status": "running"})
     try:
         if state["classification"] != "complex":
             return {"plan": []}
