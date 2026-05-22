@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field, field_validator
 class ChatRequest(BaseModel):
     conversation_id: uuid.UUID
     message: str = Field(..., max_length=10_000)
+    model: str = Field("gpt-4o")
 
     @field_validator("message")
     @classmethod

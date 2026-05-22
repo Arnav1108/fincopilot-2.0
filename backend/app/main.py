@@ -1,3 +1,4 @@
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -12,6 +13,10 @@ from app.middleware.logging import RequestLoggingMiddleware
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     setup_logging()
+    from app.config import settings
+    os.environ["LANGCHAIN_API_KEY"] = settings.LANGSMITH_API_KEY
+    os.environ["LANGCHAIN_TRACING_V2"] = "true" if settings.LANGCHAIN_TRACING_V2 else "false"
+    os.environ["LANGCHAIN_PROJECT"] = settings.LANGSMITH_PROJECT
     yield
 
 

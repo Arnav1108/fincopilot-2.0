@@ -14,3 +14,7 @@ def emit_event(event: dict) -> None:
     q = _event_queue.get()
     if q is not None:
         q.put_nowait(event)
+
+
+def reset_stream_queue(token: Token) -> None:
+    _event_queue.reset(token)
