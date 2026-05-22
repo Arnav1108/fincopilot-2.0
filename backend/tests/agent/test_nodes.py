@@ -347,11 +347,11 @@ async def test_evaluator_low_score_triggers_retry():
 
 
 @pytest.mark.asyncio
-async def test_evaluator_retry_cap_at_2():
+async def test_evaluator_retry_cap_at_3():
     patcher, mock_client = _mock_openai_client("0.3", "app.agent.evaluator.openai.AsyncOpenAI")
     with patcher:
-        result = await evaluator_node(_make_evaluator_state(retry_count=2))
-    assert result["retry_count"] == 2
+        result = await evaluator_node(_make_evaluator_state(retry_count=3))
+    assert result["retry_count"] == 3
     assert result["query"] == "What is Apple revenue?"
     mock_client.chat.completions.create.assert_called_once()
 

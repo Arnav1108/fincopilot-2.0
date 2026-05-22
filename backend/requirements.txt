@@ -24,3 +24,5 @@ tavily-python>=0.3.0
 pytest==8.3.4
 pytest-asyncio==0.24.0
 anyio[asyncio]==4.6.2
+
+langsmith>=0.1.0

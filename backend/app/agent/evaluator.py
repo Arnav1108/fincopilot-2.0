@@ -72,7 +72,7 @@ async def evaluator_node(state: AgentState) -> dict:
         # Clamp to [0.0, 1.0]
         score = max(0.0, min(1.0, score))
 
-        will_retry = score < 0.6 and state["retry_count"] < 2
+        will_retry = score < 0.6 and state["retry_count"] < 3
 
         logger.debug(
             "evaluator_scored",
