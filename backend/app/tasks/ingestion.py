@@ -1,3 +1,4 @@
+import json
 import os
 import time
 import uuid
@@ -5,6 +6,7 @@ from datetime import datetime
 
 import openai
 import pypdf
+import redis
 import structlog
 import tiktoken
 from celery.exceptions import Retry
@@ -20,6 +22,25 @@ _SYNC_DATABASE_URL = settings.DATABASE_URL.replace(
 )
 _engine = create_engine(_SYNC_DATABASE_URL, pool_pre_ping=True)
 _SessionLocal = sessionmaker(bind=_engine)
+_redis_client = redis.Redis.from_url(settings.REDIS_URL, decode_responses=True)
+_task_log = structlog.get_logger(__name__)
+
+
+def _publish_status(
+    document_id: str,
+    status: str,
+    chunk_count: int | None = None,
+    error_message: str | None = None,
+) -> None:
+    channel = f"document.{document_id}.status"
+    try:
+        _redis_client.publish(
+            channel,
+            json.dumps({"status": status, "chunk_count": chunk_count, "error_message": error_message}),
+        )
+        _task_log.debug("redis_status_published", document_id=document_id, status=status)
+    except Exception as exc:
+        _task_log.warning("redis_publish_failed", document_id=document_id, error=str(exc))
 
 
 def _build_chunks(full_text: str, pages: list[tuple[int, str]]) -> list[dict]:
@@ -96,6 +117,7 @@ def ingest_document(self, document_id: str, file_path: str) -> None:
         doc.status = DocumentStatus.processing
         doc.updated_at = datetime.utcnow()
         db.commit()
+        _publish_status(document_id, "processing")
 
         # 2. Extract text page by page, keeping (page_index, text) tuples
         reader = pypdf.PdfReader(file_path)
@@ -116,6 +138,7 @@ def ingest_document(self, document_id: str, file_path: str) -> None:
             doc.error_message = "no extractable text"
             doc.updated_at = datetime.utcnow()
             db.commit()
+            _publish_status(document_id, "failed", error_message="no extractable text")
             return
 
         # 4. Chunk with sliding window (800 tokens, 100 overlap)
@@ -138,6 +161,7 @@ def ingest_document(self, document_id: str, file_path: str) -> None:
                 doc.error_message = str(exc)
                 doc.updated_at = datetime.utcnow()
                 db.commit()
+                _publish_status(document_id, "failed", error_message=str(exc))
                 log.error("task_failed", error=str(exc))
                 return
             log.warning(
@@ -175,6 +199,7 @@ def ingest_document(self, document_id: str, file_path: str) -> None:
         doc.status = DocumentStatus.ready
         doc.updated_at = datetime.utcnow()
         db.commit()
+        _publish_status(document_id, "ready", chunk_count=len(chunks))
 
         elapsed = time.monotonic() - start_time
         log.info(
@@ -196,6 +221,7 @@ def ingest_document(self, document_id: str, file_path: str) -> None:
                 doc.error_message = str(exc)
                 doc.updated_at = datetime.utcnow()
                 db.commit()
+                _publish_status(document_id, "failed", error_message=str(exc))
         except Exception:
             pass
 
