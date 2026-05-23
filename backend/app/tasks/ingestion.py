@@ -1,8 +1,10 @@
+import csv
 import json
 import os
 import time
 import uuid
 from datetime import datetime
+from html.parser import HTMLParser
 
 import openai
 import pypdf
@@ -10,6 +12,8 @@ import redis
 import structlog
 import tiktoken
 from celery.exceptions import Retry
+from docx import Document as DocxDocument
+from docx.oxml.ns import qn as _oxml_qn
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -25,6 +29,8 @@ _SessionLocal = sessionmaker(bind=_engine)
 _redis_client = redis.Redis.from_url(settings.REDIS_URL, decode_responses=True)
 _task_log = structlog.get_logger(__name__)
 
+
+# ── Status publisher ──────────────────────────────────────────────────────────
 
 def _publish_status(
     document_id: str,
@@ -42,6 +48,148 @@ def _publish_status(
     except Exception as exc:
         _task_log.warning("redis_publish_failed", document_id=document_id, error=str(exc))
 
+
+# ── Per-format parsers ────────────────────────────────────────────────────────
+# Each returns list[tuple[page_num, text]] to fit the existing chunking logic.
+
+def _parse_pdf(file_path: str) -> list[tuple[int, str]]:
+    reader = pypdf.PdfReader(file_path)
+    return [(i, page.extract_text() or "") for i, page in enumerate(reader.pages)]
+
+
+def _parse_docx(file_path: str) -> list[tuple[int, str]]:
+    doc = DocxDocument(file_path)
+    segments: list[str] = []
+
+    # Paragraphs — preserve heading level as Markdown prefix
+    for para in doc.paragraphs:
+        text = para.text.strip()
+        if not text:
+            continue
+        style = para.style.name
+        if style.startswith("Heading 1"):
+            segments.append(f"# {text}")
+        elif style.startswith("Heading 2"):
+            segments.append(f"## {text}")
+        elif style.startswith("Heading"):
+            segments.append(f"### {text}")
+        else:
+            segments.append(text)
+
+    # Tables — each cell separated by " | ", rows by newline
+    for table in doc.tables:
+        rows = [
+            " | ".join(cell.text.strip() for cell in row.cells)
+            for row in table.rows
+        ]
+        segments.append("\n".join(rows))
+
+    # Text boxes stored in the body XML
+    for txbx in doc.element.body.iter(_oxml_qn("w:txbxContent")):
+        text = " ".join(t.text for t in txbx.iter(_oxml_qn("w:t")) if t.text).strip()
+        if text:
+            segments.append(text)
+
+    # Group segments into pages of ~30 each so page_numbers in metadata are useful
+    PAGE_SIZE = 30
+    pages: list[tuple[int, str]] = []
+    for i in range(0, max(len(segments), 1), PAGE_SIZE):
+        group = segments[i : i + PAGE_SIZE]
+        pages.append((i // PAGE_SIZE, "\n".join(group)))
+
+    return pages or [(0, "")]
+
+
+def _parse_csv(file_path: str) -> list[tuple[int, str]]:
+    ROWS_PER_PAGE = 10
+    pages: list[tuple[int, str]] = []
+
+    with open(file_path, newline="", encoding="utf-8-sig") as fh:
+        reader = csv.DictReader(fh)
+        headers = reader.fieldnames or []
+        header_line = " | ".join(headers)
+        page_num = 0
+        batch: list[str] = []
+
+        for row in reader:
+            batch.append(" | ".join(str(row.get(h, "")) for h in headers))
+            if len(batch) >= ROWS_PER_PAGE:
+                pages.append((page_num, header_line + "\n" + "\n".join(batch)))
+                page_num += 1
+                batch = []
+
+        if batch:
+            pages.append((page_num, header_line + "\n" + "\n".join(batch)))
+
+    return pages or [(0, "")]
+
+
+def _parse_txt(file_path: str) -> list[tuple[int, str]]:
+    with open(file_path, encoding="utf-8", errors="replace") as fh:
+        return [(0, fh.read())]
+
+
+class _HtmlTextExtractor(HTMLParser):
+    """Walks an HTML document and collects visible text, skipping <script>/<style>."""
+
+    _SKIP = {"script", "style", "head", "meta", "link", "noscript"}
+    _BLOCK = {"p", "div", "li", "td", "th", "tr", "blockquote", "pre", "article", "section"}
+    _HEADINGS = {"h1": 1, "h2": 2, "h3": 3, "h4": 4, "h5": 5, "h6": 6}
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._skip_depth = 0
+        self._current_tag: str | None = None
+        self._parts: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list) -> None:
+        if tag in self._SKIP:
+            self._skip_depth += 1
+        self._current_tag = tag
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in self._SKIP:
+            self._skip_depth = max(0, self._skip_depth - 1)
+        if tag in self._BLOCK or tag in self._HEADINGS:
+            self._parts.append("")  # blank line between blocks
+        self._current_tag = None
+
+    def handle_data(self, data: str) -> None:
+        if self._skip_depth:
+            return
+        text = data.strip()
+        if not text:
+            return
+        level = self._HEADINGS.get(self._current_tag or "", 0)
+        self._parts.append(("#" * level + " " + text) if level else text)
+
+    def get_text(self) -> str:
+        return "\n".join(p for p in self._parts if p.strip())
+
+
+def _parse_html(file_path: str) -> list[tuple[int, str]]:
+    with open(file_path, encoding="utf-8", errors="replace") as fh:
+        raw = fh.read()
+    extractor = _HtmlTextExtractor()
+    extractor.feed(raw)
+    return [(0, extractor.get_text())]
+
+
+def _extract_pages(file_path: str, file_type: str) -> list[tuple[int, str]]:
+    dispatch = {
+        "pdf":  _parse_pdf,
+        "docx": _parse_docx,
+        "csv":  _parse_csv,
+        "txt":  _parse_txt,
+        "html": _parse_html,
+    }
+    parser = dispatch.get(file_type.lower())
+    if parser is None:
+        raise ValueError(f"Unsupported file_type: {file_type!r}")
+    return parser(file_path)
+
+
+# ── Chunker ───────────────────────────────────────────────────────────────────
 
 def _build_chunks(full_text: str, pages: list[tuple[int, str]]) -> list[dict]:
     enc = tiktoken.get_encoding("cl100k_base")
@@ -103,9 +251,19 @@ def _build_chunks(full_text: str, pages: list[tuple[int, str]]) -> list[dict]:
     return chunks
 
 
+# ── Task ──────────────────────────────────────────────────────────────────────
+
 @celery_app.task(bind=True, max_retries=3, name="app.tasks.ingestion.ingest_document")
-def ingest_document(self, document_id: str, file_path: str) -> None:
-    log = structlog.get_logger(__name__).bind(document_id=document_id)
+def ingest_document(
+    self,
+    document_id: str,
+    file_path: str,
+    file_type: str,
+    conversation_id: str,
+) -> None:
+    log = structlog.get_logger(__name__).bind(
+        document_id=document_id, file_type=file_type
+    )
     log.info("task_started")
 
     start_time = time.monotonic()
@@ -119,12 +277,8 @@ def ingest_document(self, document_id: str, file_path: str) -> None:
         db.commit()
         _publish_status(document_id, "processing")
 
-        # 2. Extract text page by page, keeping (page_index, text) tuples
-        reader = pypdf.PdfReader(file_path)
-        pages: list[tuple[int, str]] = [
-            (i, page.extract_text() or "")
-            for i, page in enumerate(reader.pages)
-        ]
+        # 2. Parse into (page_num, text) tuples — format-aware
+        pages = _extract_pages(file_path, file_type)
         full_text = "\n".join(text for _, text in pages)
         log.info(
             "extraction_complete",
@@ -155,7 +309,6 @@ def ingest_document(self, document_id: str, file_path: str) -> None:
         except (openai.APIError, openai.RateLimitError) as exc:
             db.rollback()
             if self.request.retries >= self.max_retries:
-                # All retries exhausted: persist failure and stop
                 doc = db.get(Document, uuid.UUID(document_id))
                 doc.status = DocumentStatus.failed
                 doc.error_message = str(exc)
@@ -173,11 +326,13 @@ def ingest_document(self, document_id: str, file_path: str) -> None:
 
         log.info("embedding_complete")
 
-        # 6. Build DocumentChunk objects (embeddings indexed positionally)
+        # 6. Build DocumentChunk objects
+        conv_uuid = uuid.UUID(conversation_id)
         chunks = [
             DocumentChunk(
                 document_id=doc.id,
                 user_id=doc.user_id,
+                conversation_id=conv_uuid,
                 chunk_index=c["chunk_index"],
                 content=c["content"],
                 embedding=response.data[i].embedding,
@@ -185,6 +340,7 @@ def ingest_document(self, document_id: str, file_path: str) -> None:
                     "page_numbers": c["page_numbers"],
                     "chunk_index": c["chunk_index"],
                     "source_filename": doc.filename,
+                    "file_type": file_type,
                 },
             )
             for i, c in enumerate(chunk_dicts)

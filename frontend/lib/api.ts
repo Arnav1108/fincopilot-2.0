@@ -51,7 +51,7 @@ export function renameConversation(
 }
 
 export function deleteConversation(token: string, id: string): Promise<void> {
-  return apiFetch<void>(`/conversations/${id}/`, token, { method: "DELETE" })
+  return apiFetch<void>(`/conversations/${id}`, token, { method: "DELETE" })
 }
 
 export function listMessages(token: string, id: string): Promise<MessageRead[]> {

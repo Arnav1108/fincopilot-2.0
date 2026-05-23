@@ -39,7 +39,9 @@ Respond with only one word: simple, complex, or ingest.\
 
 
 async def router_node(state: AgentState) -> dict:
-    logger = structlog.get_logger(__name__)
+    logger = structlog.get_logger(__name__).bind(
+        conversation_id=state.get("conversation_id"),
+    )
     emit_event({"type": "node_update", "node": "router_node", "status": "running"})
     try:
         client = openai.AsyncOpenAI(api_key=settings.OPENAI_API_KEY)

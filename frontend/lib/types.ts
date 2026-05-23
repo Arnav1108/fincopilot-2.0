@@ -11,6 +11,17 @@ export interface MessageRead {
   role: "user" | "assistant"
   content: string
   created_at: string
+  // RAG metadata — present on assistant messages after migration 0005
+  rag_used?: boolean
+  relevance_score?: number | null
+  retrieved_chunk_ids?: string[] | null
+}
+
+export interface IngestProgress {
+  total: number
+  pending: number
+  ready: number
+  failed: number
 }
 
 export interface Source {
@@ -47,3 +58,6 @@ export type SseEvent =
   | { event: "sources"; data: { sources: Source[] } }
   | { event: "token"; data: { token: string } }
   | { event: "done"; data: { message_id: string | null } }
+  | { event: "ingest_progress"; data: IngestProgress }
+  | { event: "ingest_complete"; data: { document_count: number } }
+  | { event: "error"; data: { code?: string; message: string; failed_files?: string[]; pending_ids?: string[] } }

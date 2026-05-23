@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 import uuid
 from datetime import datetime, timezone
 from typing import AsyncGenerator
 
 import openai
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import StreamingResponse
 from langchain_core.runnables import RunnableConfig
 from sqlalchemy import func, select, update
@@ -20,16 +21,116 @@ from app.api.auth import clerk_auth
 from app.config import settings
 from app.database import AsyncSessionFactory
 from app.models.conversation import Conversation, Message, MessageRole
+from app.models.document import Document, DocumentStatus, DocumentType
 from app.models.user import User
-from app.schemas.chat import ChatRequest
+from app.tasks.ingestion import ingest_document
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)
 
+_ALLOWED_EXTENSIONS: frozenset[str] = frozenset({"pdf", "docx", "csv", "txt", "html"})
+_MAX_FILE_BYTES: int = 100 * 1024 * 1024   # 100 MB per file
+_INGEST_POLL_INTERVAL: float = 0.5          # seconds between DB polls
+_INGEST_TIMEOUT: float = 300.0              # seconds before giving up on ingestion
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data)}\n\n"
 
+
+def _infer_file_type(filename: str) -> str | None:
+    """Return the normalised extension for supported file types, or None."""
+    if "." not in filename:
+        return None
+    ext = filename.rsplit(".", 1)[-1].lower()
+    return ext if ext in _ALLOWED_EXTENSIONS else None
+
+
+def _calculate_relevance_score(chunks: list[dict]) -> float | None:
+    """
+    Option B — vector-based: mean cosine similarity of retrieved chunks.
+
+    Scores are already computed by the retrieval service (cosine similarity in
+    [0.0, 1.0]).  No extra LLM call.  Returns None when chunks is empty.
+    """
+    if not chunks:
+        return None
+    scores = [float(c.get("score", 0.0)) for c in chunks]
+    return round(sum(scores) / len(scores), 4)
+
+
+async def _ingest_files(
+    files: list[UploadFile],
+    user_id: uuid.UUID,
+    conversation_id: uuid.UUID,
+) -> list[uuid.UUID]:
+    """
+    Validate, persist, and queue every uploaded file for ingestion.
+
+    Raises HTTPException on any validation failure so the endpoint can return a
+    proper 4xx *before* the SSE stream is opened — callers see a normal error
+    response, not a broken event stream.
+
+    Returns the list of Document UUIDs submitted to the Celery queue.
+    """
+    document_ids: list[uuid.UUID] = []
+
+    for file in files:
+        filename = file.filename or ""
+        file_type = _infer_file_type(filename)
+        if file_type is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    f"Unsupported file type for '{filename}'. "
+                    f"Allowed extensions: {sorted(_ALLOWED_EXTENSIONS)}"
+                ),
+            )
+
+        data = await file.read()
+        if len(data) > _MAX_FILE_BYTES:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    f"File '{filename}' is {len(data):,} bytes, "
+                    f"which exceeds the 100 MB limit."
+                ),
+            )
+
+        async with AsyncSessionFactory() as db:
+            doc = Document(
+                user_id=user_id,
+                conversation_id=conversation_id,
+                filename=filename or f"upload.{file_type}",
+                doc_type=DocumentType.other,
+                status=DocumentStatus.pending,
+            )
+            db.add(doc)
+            await db.commit()
+            await db.refresh(doc)
+
+        file_path = f"/tmp/{doc.id}.{file_type}"
+        with open(file_path, "wb") as fh:
+            fh.write(data)
+
+        ingest_document.delay(str(doc.id), file_path, file_type, str(conversation_id))
+        document_ids.append(doc.id)
+
+        logger.info(
+            "file_queued_for_ingestion",
+            document_id=str(doc.id),
+            filename=filename,
+            file_type=file_type,
+            file_size_bytes=len(data),
+            conversation_id=str(conversation_id),
+        )
+
+    return document_ids
+
+
+# ── SSE event stream ──────────────────────────────────────────────────────────
 
 async def _stream_events(
     conversation_id: uuid.UUID,
@@ -37,7 +138,70 @@ async def _stream_events(
     message: str,
     model: str,
     memory: dict,
+    document_ids: list[uuid.UUID],
 ) -> AsyncGenerator[str, None]:
+    # ── Phase 1: wait for file ingestion ─────────────────────────────────────
+    if document_ids:
+        pending: set[uuid.UUID] = set(document_ids)
+        failed_files: list[str] = []
+        deadline = time.monotonic() + _INGEST_TIMEOUT
+
+        yield _sse("ingest_progress", {
+            "total": len(document_ids),
+            "pending": len(pending),
+            "ready": 0,
+            "failed": 0,
+        })
+
+        while pending:
+            if time.monotonic() >= deadline:
+                yield _sse("error", {
+                    "code": "ingest_timeout",
+                    "message": (
+                        f"File ingestion did not complete within "
+                        f"{int(_INGEST_TIMEOUT)} seconds. "
+                        "The documents are still processing — try again shortly."
+                    ),
+                    "pending_ids": [str(d) for d in pending],
+                })
+                return
+
+            await asyncio.sleep(_INGEST_POLL_INTERVAL)
+
+            async with AsyncSessionFactory() as db:
+                result = await db.execute(
+                    select(Document).where(Document.id.in_(list(pending)))
+                )
+                docs = result.scalars().all()
+
+            for doc in docs:
+                if doc.status == DocumentStatus.ready:
+                    pending.discard(doc.id)
+                elif doc.status == DocumentStatus.failed:
+                    pending.discard(doc.id)
+                    failed_files.append(
+                        f"'{doc.filename}': {doc.error_message or 'processing error'}"
+                    )
+
+            ready_count = len(document_ids) - len(pending) - len(failed_files)
+            yield _sse("ingest_progress", {
+                "total": len(document_ids),
+                "pending": len(pending),
+                "ready": ready_count,
+                "failed": len(failed_files),
+            })
+
+        if failed_files:
+            yield _sse("error", {
+                "code": "ingest_failed",
+                "message": "One or more files failed to ingest.",
+                "failed_files": failed_files,
+            })
+            return
+
+        yield _sse("ingest_complete", {"document_count": len(document_ids)})
+
+    # ── Phase 2: invoke the agent graph ──────────────────────────────────────
     queue: asyncio.Queue = asyncio.Queue()
     token = set_stream_queue(queue)
 
@@ -52,6 +216,8 @@ async def _stream_events(
         "retrieved_chunks": [],
         "reranked_chunks": [],
         "retrieval_quality_score": 1.0,
+        "rag_used": False,
+        "relevance_score": None,
         "retry_count": 0,
         "conversation_summary": memory.get("conversation_summary", ""),
         "recent_messages": memory.get("recent_messages", []),
@@ -80,7 +246,7 @@ async def _stream_events(
     task = asyncio.create_task(_run_and_signal())
 
     try:
-        # Drain events from the queue until the None sentinel signals completion.
+        # Drain agent events until the None sentinel signals graph completion.
         while True:
             event = await queue.get()
             if event is None:
@@ -105,15 +271,38 @@ async def _stream_events(
             yield _sse("done", {"message_id": None, "conversation_id": str(conversation_id)})
             return
 
-        # Persist assistant message.
-        assistant_message_id = None
-        final_output = final_state.get("final_output") or ""
+        # ── Phase 3: compute RAG metadata from final state ────────────────
+        final_output: str = final_state.get("final_output") or ""
+        retrieved_chunks: list[dict] = final_state.get("retrieved_chunks") or []
+
+        rag_used: bool = bool(final_state.get("rag_used", False))
+
+        # Relevance score: mean cosine similarity of retrieved chunks.
+        # Only meaningful when retrieval was actually used.
+        relevance_score: float | None = (
+            _calculate_relevance_score(retrieved_chunks) if rag_used else None
+        )
+
+        # Chunk IDs for provenance tracking.  The metadata key "chunk_id" is
+        # populated by the retrieval service via ChunkResult; once _normalize_chunks
+        # is updated to unwrap DocumentRetrievalOutput these will be non-empty.
+        retrieved_chunk_ids: list[str] = [
+            str(meta["chunk_id"])
+            for c in retrieved_chunks
+            if (meta := c.get("metadata") or {}) and "chunk_id" in meta
+        ]
+
+        # ── Phase 4: persist the assistant message ────────────────────────
+        assistant_message_id: uuid.UUID | None = None
         try:
             async with AsyncSessionFactory() as db:
                 msg = Message(
                     conversation_id=conversation_id,
                     role=MessageRole.assistant,
                     content=final_output,
+                    rag_used=rag_used,
+                    relevance_score=relevance_score,
+                    retrieved_chunk_ids=retrieved_chunk_ids if retrieved_chunk_ids else None,
                 )
                 db.add(msg)
                 await db.execute(
@@ -133,7 +322,7 @@ async def _stream_events(
             yield _sse("error", {"message": "Failed to save assistant message"})
             return
 
-        # Retrieve LangSmith trace URL (best-effort, never fails the request).
+        # ── Phase 5: LangSmith trace URL (best-effort, never fails) ──────
         await asyncio.sleep(1.0)
         trace_url: str | None = None
         try:
@@ -161,7 +350,7 @@ async def _stream_events(
                     message_id=str(assistant_message_id),
                 )
 
-        # Rolling summary regeneration every 6 messages.
+        # ── Phase 6: rolling summary every 6 messages ────────────────────
         try:
             async with AsyncSessionFactory() as db:
                 count_result = await db.execute(
@@ -213,7 +402,9 @@ async def _stream_events(
             conversation_id=str(conversation_id),
             user_id=str(user_id),
             assistant_message_id=str(assistant_message_id),
-            token_count=len(final_output),
+            rag_used=rag_used,
+            relevance_score=relevance_score,
+            retrieved_chunk_count=len(retrieved_chunks),
         )
 
         yield _sse("done", {
@@ -227,15 +418,38 @@ async def _stream_events(
             task.cancel()
 
 
+# ── Endpoint ──────────────────────────────────────────────────────────────────
+
 @router.post("/{conversation_id}/stream")
 async def stream_chat(
     conversation_id: uuid.UUID,
-    body: ChatRequest,
+    message: str = Form(..., max_length=10_000),
+    model: str = Form("gpt-4o"),
+    files: list[UploadFile] | None = File(None),
     user: User = Depends(clerk_auth),
 ):
-    if body.conversation_id != conversation_id:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="conversation_id mismatch")
+    """
+    Stream an agent response over SSE.
 
+    Request format: multipart/form-data
+      - message   (str, required)
+      - model     (str, optional, default "gpt-4o")
+      - files     (UploadFile[], optional — pdf, docx, csv, txt, html; max 100 MB each)
+
+    SSE event sequence (with files):
+      ingest_progress  →  ...  →  ingest_complete
+      node_update  →  tool_call  →  token  →  ...  →  done
+
+    SSE event sequence (no files):
+      node_update  →  tool_call  →  token  →  ...  →  done
+    """
+    if not message.strip():
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="message must not be blank",
+        )
+
+    # 1. Validate conversation ownership and persist the user message.
     async with AsyncSessionFactory() as db:
         result = await db.execute(
             select(Conversation).where(
@@ -252,12 +466,12 @@ async def stream_chat(
             )
             raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Not found")
 
-        msg = Message(
+        user_msg = Message(
             conversation_id=conversation_id,
             role=MessageRole.user,
-            content=body.message,
+            content=message,
         )
-        db.add(msg)
+        db.add(user_msg)
         await db.execute(
             update(Conversation)
             .where(Conversation.id == conversation_id)
@@ -272,14 +486,30 @@ async def stream_chat(
 
         memory = await MemoryManager().load_memory(db, str(user.id), str(conversation_id))
 
+    # 2. Validate + queue uploaded files.  Raises 422 immediately on bad input
+    #    so the client gets a normal HTTP error before any SSE frames are sent.
+    document_ids: list[uuid.UUID] = []
+    if files:
+        non_empty = [f for f in files if f.filename]
+        if non_empty:
+            document_ids = await _ingest_files(non_empty, user.id, conversation_id)
+
     logger.info(
         "chat_stream_started",
         conversation_id=str(conversation_id),
         user_id=str(user.id),
+        file_count=len(document_ids),
     )
 
     return StreamingResponse(
-        _stream_events(conversation_id, user.id, body.message, body.model, memory),
+        _stream_events(
+            conversation_id,
+            user.id,
+            message,
+            model,
+            memory,
+            document_ids,
+        ),
         media_type="text/event-stream; charset=utf-8",
         headers={
             "Cache-Control": "no-cache",

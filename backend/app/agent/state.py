@@ -59,6 +59,8 @@ class AgentState(TypedDict):
     retrieved_chunks: list[ChunkDict]
     reranked_chunks: list[ChunkDict]
     retrieval_quality_score: float
+    rag_used: bool
+    relevance_score: float | None
     retry_count: int
     conversation_summary: str
     recent_messages: list[RecentMessage]

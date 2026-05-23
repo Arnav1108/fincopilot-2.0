@@ -35,7 +35,11 @@ async def executor_node(state: AgentState) -> dict:
             emit_event({"type": "tool_call", "tool_name": "document_retrieval", "step_id": "retrieval", "status": "running"})
             try:
                 raw = await TOOL_REGISTRY["document_retrieval"](
-                    DocumentRetrievalInput(query=state["query"], user_id=state["user_id"])
+                    DocumentRetrievalInput(
+                        query=state["query"],
+                        user_id=state["user_id"],
+                        conversation_id=state["conversation_id"],
+                    )
                 )
                 emit_event({"type": "tool_call", "tool_name": "document_retrieval", "step_id": "retrieval", "status": "complete"})
             except Exception:
@@ -55,6 +59,7 @@ async def executor_node(state: AgentState) -> dict:
                 "tool_results": existing_tool_results,
                 "retrieved_chunks": chunks,
                 "reranked_chunks": reranked_chunks,
+                "rag_used": len(chunks) > 0,
             }
 
         # --- complex: execute plan in dependency order ---
@@ -82,6 +87,7 @@ async def executor_node(state: AgentState) -> dict:
                     {
                         "query": state["query"],
                         "user_id": state["user_id"],
+                        "conversation_id": state["conversation_id"],
                         **{sid: str(tool_results.get(sid, "")) for sid in resolved},
                     }
                 )
@@ -96,6 +102,14 @@ async def executor_node(state: AgentState) -> dict:
 
                     input_cls = _TOOL_INPUT_MODELS.get(step["tool_name"])
                     if input_cls is not None and isinstance(tool_input, dict):
+                        if step["tool_name"] == "document_retrieval":
+                            # Planner templates are often plain strings, not full JSON objects.
+                            # When the template wasn't JSON, tool_input is {"input": rendered}.
+                            # Reshape it to DocumentRetrievalInput's expected keys.
+                            if set(tool_input.keys()) == {"input"}:
+                                tool_input = {"query": tool_input["input"]}
+                            tool_input.setdefault("user_id", state["user_id"])
+                            tool_input.setdefault("conversation_id", state["conversation_id"])
                         tool_input = input_cls.model_validate(tool_input)
                     result = await TOOL_REGISTRY[step["tool_name"]](tool_input)
                     emit_event({"type": "tool_call", "tool_name": step["tool_name"], "step_id": step_id, "status": "complete"})
@@ -144,6 +158,7 @@ async def executor_node(state: AgentState) -> dict:
             "tool_results": merged,
             "retrieved_chunks": chunks,
             "reranked_chunks": reranked_chunks,
+            "rag_used": len(chunks) > 0,
         }
 
     except Exception as e:

@@ -52,6 +52,9 @@ class Message(Base):
     content: Mapped[str] = mapped_column(sa.Text, nullable=False)
     token_count: Mapped[Optional[int]] = mapped_column(sa.Integer, nullable=True)
     agent_trace: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    rag_used: Mapped[bool] = mapped_column(sa.Boolean, nullable=False, default=False, server_default=sa.false())
+    relevance_score: Mapped[Optional[float]] = mapped_column(sa.Float, nullable=True)
+    retrieved_chunk_ids: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now())
 
     conversation: Mapped["Conversation"] = relationship("Conversation", back_populates="messages")

@@ -37,6 +37,12 @@ class Document(Base):
         nullable=False,
         index=True,
     )
+    conversation_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("conversations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     filename: Mapped[str] = mapped_column(sa.Text, nullable=False)
     source_url: Mapped[Optional[str]] = mapped_column(sa.Text, nullable=True)
     doc_type: Mapped[DocumentType] = mapped_column(
@@ -73,6 +79,12 @@ class DocumentChunk(Base):
         UUID(as_uuid=True),
         sa.ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
+    )
+    conversation_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        sa.ForeignKey("conversations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     chunk_index: Mapped[int] = mapped_column(sa.Integer, nullable=False)
     content: Mapped[str] = mapped_column(sa.Text, nullable=False)

@@ -8,7 +8,7 @@ import useStream from "@/hooks/useStream"
 import { useConversations } from "@/hooks/useConversations"
 import MessageList from "@/components/chat/MessageList"
 import InputBar from "@/components/chat/InputBar"
-import type { Source } from "@/lib/types"
+import type { IngestProgress, Source } from "@/lib/types"
 
 export default function ConversationPage({ params }: { params: { id: string } }) {
   const id = params.id
@@ -19,6 +19,8 @@ export default function ConversationPage({ params }: { params: { id: string } })
   const [streamingContent, setStreamingContent] = useState("")
   const [agentStatus, setAgentStatus] = useState<string | null>(null)
   const [streamingSources, setStreamingSources] = useState<Source[]>([])
+  const [ingestProgress, setIngestProgress] = useState<IngestProgress | null>(null)
+  const [streamError, setStreamError] = useState<string | null>(null)
 
   // Ref tracks accumulated content so onDone never has a stale closure
   const streamingContentRef = useRef("")
@@ -30,6 +32,8 @@ export default function ConversationPage({ params }: { params: { id: string } })
     }, []),
 
     onNodeUpdate: useCallback((node: string) => {
+      // Clear ingestion state once the agent takes over
+      setIngestProgress(null)
       setAgentStatus(node)
     }, []),
 
@@ -42,6 +46,7 @@ export default function ConversationPage({ params }: { params: { id: string } })
         streamingContentRef.current = ""
         setStreamingContent("")
         setAgentStatus(null)
+        setIngestProgress(null)
         bumpToTop(id)
         await load(id)
       },
@@ -50,9 +55,20 @@ export default function ConversationPage({ params }: { params: { id: string } })
 
     onError: useCallback((err: Error) => {
       console.error("[useStream] error", err)
+      setStreamError(err.message)
       setAgentStatus(null)
+      setIngestProgress(null)
       streamingContentRef.current = ""
       setStreamingContent("")
+    }, []),
+
+    onIngestProgress: useCallback((progress: IngestProgress) => {
+      setIngestProgress(progress)
+    }, []),
+
+    onIngestComplete: useCallback((_count: number) => {
+      // Ingestion done; Phase 2 (agent) begins — clear progress indicator
+      setIngestProgress(null)
     }, []),
   })
 
@@ -61,9 +77,13 @@ export default function ConversationPage({ params }: { params: { id: string } })
   }, [id, load])
 
   const handleSend = useCallback(
-    async (message: string) => {
+    async (message: string, files: File[]) => {
       const token = await getToken()
       if (!token) return
+
+      // Clear previous error on new send
+      setStreamError(null)
+
       addMessage({
         id: crypto.randomUUID(),
         conversation_id: id,
@@ -75,7 +95,9 @@ export default function ConversationPage({ params }: { params: { id: string } })
       setStreamingContent("")
       setAgentStatus(null)
       setStreamingSources([])
-      await startStream(id, message, token)
+      setIngestProgress(null)
+
+      await startStream(id, message, token, files.length ? files : undefined)
     },
     [getToken, addMessage, id, startStream],
   )
@@ -108,7 +130,12 @@ export default function ConversationPage({ params }: { params: { id: string } })
         streamingSources={streamingSources}
         isStreaming={isStreaming}
       />
-      <InputBar onSend={handleSend} disabled={isStreaming} />
+      <InputBar
+        onSend={handleSend}
+        disabled={isStreaming}
+        ingestProgress={ingestProgress}
+        streamError={streamError}
+      />
     </div>
   )
 }
