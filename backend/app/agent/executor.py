@@ -8,7 +8,20 @@ import structlog
 
 from app.agent.state import AgentState, ChunkDict
 from app.agent.stream_context import emit_event
+from app.schemas.tools.document_retrieval import DocumentRetrievalInput
+from app.schemas.tools.financial_calculator import FinancialCalculatorInput
+from app.schemas.tools.financial_data import FinancialDataInput
+from app.schemas.tools.news_fetch import NewsFetchInput
+from app.schemas.tools.sec_filing import SECFilingInput
 from app.tools import TOOL_REGISTRY, ToolError
+
+_TOOL_INPUT_MODELS = {
+    "document_retrieval": DocumentRetrievalInput,
+    "financial_calculator": FinancialCalculatorInput,
+    "financial_data": FinancialDataInput,
+    "news_fetch": NewsFetchInput,
+    "sec_filing": SECFilingInput,
+}
 
 
 async def executor_node(state: AgentState) -> dict:
@@ -22,7 +35,7 @@ async def executor_node(state: AgentState) -> dict:
             emit_event({"type": "tool_call", "tool_name": "document_retrieval", "step_id": "retrieval", "status": "running"})
             try:
                 raw = await TOOL_REGISTRY["document_retrieval"](
-                    {"query": state["query"], "user_id": state["user_id"]}
+                    DocumentRetrievalInput(query=state["query"], user_id=state["user_id"])
                 )
                 emit_event({"type": "tool_call", "tool_name": "document_retrieval", "step_id": "retrieval", "status": "complete"})
             except Exception:
@@ -81,6 +94,9 @@ async def executor_node(state: AgentState) -> dict:
                     except (json.JSONDecodeError, ValueError):
                         tool_input = {"input": rendered}
 
+                    input_cls = _TOOL_INPUT_MODELS.get(step["tool_name"])
+                    if input_cls is not None and isinstance(tool_input, dict):
+                        tool_input = input_cls.model_validate(tool_input)
                     result = await TOOL_REGISTRY[step["tool_name"]](tool_input)
                     emit_event({"type": "tool_call", "tool_name": step["tool_name"], "step_id": step_id, "status": "complete"})
                     return step_id, result

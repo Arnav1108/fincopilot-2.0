@@ -38,20 +38,14 @@ export default function ConversationPage({ params }: { params: { id: string } })
     }, []),
 
     onDone: useCallback(
-      (messageId: string | null) => {
-        addMessage({
-          id: messageId ?? crypto.randomUUID(),
-          conversation_id: id,
-          role: "assistant",
-          content: streamingContentRef.current,
-          created_at: new Date().toISOString(),
-        })
+      async (_messageId: string | null) => {
         streamingContentRef.current = ""
         setStreamingContent("")
         setAgentStatus(null)
         bumpToTop(id)
+        await load(id)
       },
-      [addMessage, bumpToTop, id],
+      [bumpToTop, id, load],
     ),
 
     onError: useCallback((err: Error) => {

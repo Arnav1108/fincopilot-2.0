@@ -36,7 +36,7 @@ async def evaluator_node(state: AgentState) -> dict:
         if not reranked_chunks:
             return {
                 "retrieval_quality_score": 0.0,
-                "retry_count": state["retry_count"],
+                "retry_count": state["retry_count"] + 1,
                 "query": state["query"],
             }
 

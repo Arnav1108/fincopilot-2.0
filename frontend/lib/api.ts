@@ -32,11 +32,11 @@ async function apiFetch<T>(
 }
 
 export function createConversation(token: string): Promise<ConversationRead> {
-  return apiFetch("/conversations", token, { method: "POST" })
+  return apiFetch("/conversations/", token, { method: "POST" })
 }
 
 export function listConversations(token: string): Promise<ConversationRead[]> {
-  return apiFetch("/conversations", token)
+  return apiFetch("/conversations/", token)
 }
 
 export function renameConversation(
@@ -44,14 +44,14 @@ export function renameConversation(
   id: string,
   title: string,
 ): Promise<ConversationRead> {
-  return apiFetch(`/conversations/${id}`, token, {
+  return apiFetch(`/conversations/${id}/`, token, {
     method: "PATCH",
     body: JSON.stringify({ title }),
   })
 }
 
 export function deleteConversation(token: string, id: string): Promise<void> {
-  return apiFetch<void>(`/conversations/${id}`, token, { method: "DELETE" })
+  return apiFetch<void>(`/conversations/${id}/`, token, { method: "DELETE" })
 }
 
 export function listMessages(token: string, id: string): Promise<MessageRead[]> {

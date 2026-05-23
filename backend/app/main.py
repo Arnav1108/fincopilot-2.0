@@ -20,7 +20,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="FinCopilot API", version="2.0.0", lifespan=lifespan)
+app = FastAPI(title="FinCopilot API", version="2.0.0", lifespan=lifespan, redirect_slashes=False)
 
 app.add_middleware(
     CORSMiddleware,
