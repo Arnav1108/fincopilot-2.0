@@ -181,9 +181,11 @@ async def test_executor_simple_path_events() -> None:
             await executor_node({
                 "query": "Apple revenue?",
                 "user_id": str(uuid.uuid4()),
+                "conversation_id": str(uuid.uuid4()),
                 "classification": "simple",
                 "plan": [],
                 "tool_results": {},
+                "analyst_profile": {},
             })
 
         events = _drain(q)
@@ -229,6 +231,7 @@ async def test_ingest_path_sse() -> None:
                 message="please ingest this document",
                 model="gpt-4o",
                 memory={"conversation_summary": "", "recent_messages": []},
+                document_ids=[],
             )
         )
 
@@ -251,6 +254,7 @@ async def test_error_path_sse() -> None:
                 message="test query",
                 model="gpt-4o",
                 memory={"conversation_summary": "", "recent_messages": []},
+                document_ids=[],
             )
         )
 

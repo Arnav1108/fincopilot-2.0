@@ -4,13 +4,13 @@ import os
 import time
 import uuid
 from datetime import datetime
-from html.parser import HTMLParser
 
 import openai
 import pypdf
 import redis
 import structlog
 import tiktoken
+from bs4 import BeautifulSoup
 from celery.exceptions import Retry
 from docx import Document as DocxDocument
 from docx.oxml.ns import qn as _oxml_qn
@@ -129,50 +129,18 @@ def _parse_txt(file_path: str) -> list[tuple[int, str]]:
         return [(0, fh.read())]
 
 
-class _HtmlTextExtractor(HTMLParser):
-    """Walks an HTML document and collects visible text, skipping <script>/<style>."""
-
-    _SKIP = {"script", "style", "head", "meta", "link", "noscript"}
-    _BLOCK = {"p", "div", "li", "td", "th", "tr", "blockquote", "pre", "article", "section"}
-    _HEADINGS = {"h1": 1, "h2": 2, "h3": 3, "h4": 4, "h5": 5, "h6": 6}
-
-    def __init__(self) -> None:
-        super().__init__()
-        self._skip_depth = 0
-        self._current_tag: str | None = None
-        self._parts: list[str] = []
-
-    def handle_starttag(self, tag: str, attrs: list) -> None:
-        if tag in self._SKIP:
-            self._skip_depth += 1
-        self._current_tag = tag
-
-    def handle_endtag(self, tag: str) -> None:
-        if tag in self._SKIP:
-            self._skip_depth = max(0, self._skip_depth - 1)
-        if tag in self._BLOCK or tag in self._HEADINGS:
-            self._parts.append("")  # blank line between blocks
-        self._current_tag = None
-
-    def handle_data(self, data: str) -> None:
-        if self._skip_depth:
-            return
-        text = data.strip()
-        if not text:
-            return
-        level = self._HEADINGS.get(self._current_tag or "", 0)
-        self._parts.append(("#" * level + " " + text) if level else text)
-
-    def get_text(self) -> str:
-        return "\n".join(p for p in self._parts if p.strip())
-
-
 def _parse_html(file_path: str) -> list[tuple[int, str]]:
     with open(file_path, encoding="utf-8", errors="replace") as fh:
         raw = fh.read()
-    extractor = _HtmlTextExtractor()
-    extractor.feed(raw)
-    return [(0, extractor.get_text())]
+    soup = BeautifulSoup(raw, "html.parser")
+    for tag in soup(["script", "style"]):
+        tag.decompose()
+    parts: list[str] = []
+    for el in soup.find_all(["p", "div", "h1", "h2", "h3", "h4", "h5", "h6", "table"]):
+        text = el.get_text(separator=" ", strip=True)
+        if text:
+            parts.append(text)
+    return [(0, "\n".join(parts))]
 
 
 def _extract_pages(file_path: str, file_type: str) -> list[tuple[int, str]]:

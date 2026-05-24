@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import openai
@@ -39,7 +40,8 @@ def _make_executor_state(**overrides):
     base = {
         "classification": "simple",
         "query": "What is Apple revenue?",
-        "user_id": "user-123",
+        "user_id": str(uuid.uuid4()),
+        "conversation_id": str(uuid.uuid4()),
         "tool_results": {},
         "plan": [],
     }
@@ -224,8 +226,8 @@ async def test_executor_simple_calls_retrieval():
 @pytest.mark.asyncio
 async def test_executor_complex_parallel_steps():
     plan = [
-        {"id": "step_1", "tool_name": "financial_data", "input_template": "AAPL revenue", "dependencies": []},
-        {"id": "step_2", "tool_name": "news_fetch", "input_template": "Apple news", "dependencies": []},
+        {"id": "step_1", "tool_name": "financial_data", "input_template": '{{"ticker": "AAPL"}}', "dependencies": []},
+        {"id": "step_2", "tool_name": "news_fetch", "input_template": '{{"ticker": "AAPL"}}', "dependencies": []},
     ]
     mock_financial = AsyncMock(return_value={"revenue": "100B"})
     mock_news = AsyncMock(return_value={"articles": ["article1"]})
@@ -245,8 +247,8 @@ async def test_executor_complex_parallel_steps():
 @pytest.mark.asyncio
 async def test_executor_complex_dependency_chain():
     plan = [
-        {"id": "step_1", "tool_name": "financial_data", "input_template": "AAPL revenue", "dependencies": []},
-        {"id": "step_2", "tool_name": "financial_calculator", "input_template": "calculate: {step_1}", "dependencies": ["step_1"]},
+        {"id": "step_1", "tool_name": "financial_data", "input_template": '{{"ticker": "AAPL"}}', "dependencies": []},
+        {"id": "step_2", "tool_name": "financial_calculator", "input_template": '{{"current_price": 150.0}}', "dependencies": ["step_1"]},
     ]
     mock_financial = AsyncMock(return_value={"revenue": "100B"})
     mock_calculator = AsyncMock(return_value={"result": "42"})
@@ -266,8 +268,8 @@ async def test_executor_complex_dependency_chain():
 @pytest.mark.asyncio
 async def test_executor_tool_error_isolated():
     plan = [
-        {"id": "step_1", "tool_name": "financial_data", "input_template": "AAPL revenue", "dependencies": []},
-        {"id": "step_2", "tool_name": "news_fetch", "input_template": "Apple news", "dependencies": []},
+        {"id": "step_1", "tool_name": "financial_data", "input_template": '{{"ticker": "AAPL"}}', "dependencies": []},
+        {"id": "step_2", "tool_name": "news_fetch", "input_template": '{{"ticker": "AAPL"}}', "dependencies": []},
     ]
     mock_failing = AsyncMock(side_effect=ToolError("upstream failure"))
     mock_succeeding = AsyncMock(return_value={"articles": ["article1"]})
