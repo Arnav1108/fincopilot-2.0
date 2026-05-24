@@ -12,8 +12,8 @@ You are a query router for a financial research assistant. Classify the user que
 
 Categories:
 - simple: A straightforward lookup or question answerable from existing documents with a single retrieval step. No multi-step reasoning required.
-- complex: A multi-step research question requiring multiple tools, comparisons, calculations, or synthesising information from several sources.
-- ingest: The user wants to upload, process, or add a document to the knowledge base. Not a research question.
+- complex: A multi-step research question requiring multiple tools, comparisons, calculations, or synthesising information from several sources. Also use this when the user asks to fetch, retrieve, or download a document from the web or SEC EDGAR (the agent will use document_finder to acquire it).
+- ingest: The user wants to upload or add a LOCAL file they have provided directly. Not a research question and not a web/SEC fetch.
 
 Examples:
 Query: "What was Apple's revenue in Q3 2023?"
@@ -41,7 +41,7 @@ Query: "Fetch Tesla's latest earnings transcript and tell me the key takeaways"
 Category: complex
 
 Query: "Get Microsoft's 10-Q"
-Category: ingest
+Category: complex
 
 Respond with only one word: simple, complex, or ingest.\
 """
