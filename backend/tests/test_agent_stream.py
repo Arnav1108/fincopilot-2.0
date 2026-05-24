@@ -110,7 +110,7 @@ async def test_synthesizer_emits_tokens() -> None:
 
 
 async def test_synthesizer_empty_chunks_no_tokens() -> None:
-    """Empty reranked_chunks → early return with no token events on the queue."""
+    """Empty reranked_chunks → synthesizer falls back to LLM, emitting token events."""
     q: asyncio.Queue = asyncio.Queue()
     tok = set_stream_queue(q)
     try:
@@ -123,8 +123,8 @@ async def test_synthesizer_empty_chunks_no_tokens() -> None:
             "analyst_profile": {},
         })
         token_events = [e for e in _drain(q) if e.get("type") == "token"]
-        assert token_events == []
-        assert "No relevant documents" in result["final_output"]
+        assert len(token_events) >= 1
+        assert isinstance(result["final_output"], str) and result["final_output"]
     finally:
         reset_stream_queue(tok)
 

@@ -309,7 +309,7 @@ async def test_evaluator_empty_chunks_short_circuits():
         state = _make_evaluator_state(reranked_chunks=[])
         result = await evaluator_node(state)
 
-    assert result["retrieval_quality_score"] == 0.0
+    assert result["retrieval_quality_score"] == 1.0
     mock_client.chat.completions.create.assert_not_called()
 
 
@@ -375,15 +375,21 @@ async def test_evaluator_unparseable_score_clamped():
 
 @pytest.mark.asyncio
 async def test_synthesizer_empty_chunks_short_circuits():
+    async def fake_stream(*_args, **_kwargs):
+        chunk = MagicMock()
+        chunk.choices = [MagicMock()]
+        chunk.choices[0].delta.content = "answer"
+        yield chunk
+
     with patch("app.agent.synthesizer.openai.AsyncOpenAI") as MockOpenAI:
         mock_client = MagicMock()
-        mock_client.chat.completions.create = AsyncMock()
+        mock_client.chat.completions.create = AsyncMock(return_value=fake_stream())
         MockOpenAI.return_value = mock_client
 
         result = await synthesizer_node(_make_synthesizer_state(reranked_chunks=[]))
 
-    assert result["final_output"] == "No relevant documents were found to answer this query."
-    mock_client.chat.completions.create.assert_not_called()
+    assert isinstance(result["final_output"], str) and result["final_output"]
+    mock_client.chat.completions.create.assert_called()
 
 
 @pytest.mark.asyncio

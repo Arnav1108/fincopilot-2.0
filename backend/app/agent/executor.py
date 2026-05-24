@@ -190,10 +190,15 @@ def _normalize_chunks(raw: Any) -> list[ChunkDict]:
     out: list[ChunkDict] = []
     for item in raw:
         if isinstance(item, dict) and "content" in item:
+            base_meta = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
+            if "chunk_id" in item:
+                base_meta["chunk_id"] = str(item["chunk_id"])
+            if "document_id" in item:
+                base_meta["document_id"] = str(item["document_id"])
             out.append(
                 ChunkDict(
                     content=str(item["content"]),
-                    metadata=item.get("metadata") if isinstance(item.get("metadata"), dict) else None,
+                    metadata=base_meta,
                     score=float(item.get("score", 0.0)),
                 )
             )
