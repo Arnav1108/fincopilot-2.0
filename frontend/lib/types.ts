@@ -29,6 +29,12 @@ export interface Source {
   url: string
 }
 
+export interface ToolCall {
+  tool_name: string
+  status: "running" | "complete" | "ingesting"
+  message?: string
+}
+
 export type InvestmentStyle = "growth" | "value" | "blend"
 export type OutputFormat = "concise" | "detailed" | "bullet_points"
 

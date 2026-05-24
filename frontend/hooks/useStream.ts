@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useState } from "react"
-import type { IngestProgress, Source } from "@/lib/types"
+import type { IngestProgress, Source, ToolCall } from "@/lib/types"
 
 const BASE = process.env.NEXT_PUBLIC_API_URL
 
@@ -15,6 +15,8 @@ interface UseStreamOptions {
   onIngestProgress?: (progress: IngestProgress) => void
   /** Called once when all files have been ingested successfully. */
   onIngestComplete?: (documentCount: number) => void
+  /** Called for each tool_call SSE event emitted by the agent executor. */
+  onToolCall?: (toolCall: ToolCall) => void
 }
 
 interface UseStreamResult {
@@ -36,6 +38,7 @@ export default function useStream(options: UseStreamOptions): UseStreamResult {
     onError,
     onIngestProgress,
     onIngestComplete,
+    onToolCall,
   } = options
 
   const [isStreaming, setIsStreaming] = useState(false)
@@ -120,6 +123,13 @@ export default function useStream(options: UseStreamOptions): UseStreamResult {
               case "ingest_complete":
                 onIngestComplete?.((data.document_count as number) ?? 0)
                 break
+              case "tool_call":
+                onToolCall?.({
+                  tool_name: data.tool_name as string,
+                  status: data.status as ToolCall["status"],
+                  message: data.message as string | undefined,
+                })
+                break
               case "error":
                 onError(
                   new Error(
@@ -131,7 +141,6 @@ export default function useStream(options: UseStreamOptions): UseStreamResult {
                   ),
                 )
                 break outer
-              // tool_call is debug-only; no UI update needed
             }
           }
         }
@@ -141,7 +150,7 @@ export default function useStream(options: UseStreamOptions): UseStreamResult {
         setIsStreaming(false)
       }
     },
-    [onToken, onNodeUpdate, onSources, onDone, onError, onIngestProgress, onIngestComplete],
+    [onToken, onNodeUpdate, onSources, onDone, onError, onIngestProgress, onIngestComplete, onToolCall],
   )
 
   return { startStream, isStreaming }

@@ -8,7 +8,7 @@ import useStream from "@/hooks/useStream"
 import { useConversations } from "@/hooks/useConversations"
 import MessageList from "@/components/chat/MessageList"
 import InputBar from "@/components/chat/InputBar"
-import type { IngestProgress, Source } from "@/lib/types"
+import type { IngestProgress, Source, ToolCall } from "@/lib/types"
 
 export default function ConversationPage({ params }: { params: { id: string } }) {
   const id = params.id
@@ -18,6 +18,7 @@ export default function ConversationPage({ params }: { params: { id: string } })
 
   const [streamingContent, setStreamingContent] = useState("")
   const [agentStatus, setAgentStatus] = useState<string | null>(null)
+  const [toolCall, setToolCall] = useState<ToolCall | null>(null)
   const [streamingSources, setStreamingSources] = useState<Source[]>([])
   const [ingestProgress, setIngestProgress] = useState<IngestProgress | null>(null)
   const [streamError, setStreamError] = useState<string | null>(null)
@@ -46,6 +47,7 @@ export default function ConversationPage({ params }: { params: { id: string } })
         streamingContentRef.current = ""
         setStreamingContent("")
         setAgentStatus(null)
+        setToolCall(null)
         setIngestProgress(null)
         bumpToTop(id)
         await load(id)
@@ -57,6 +59,7 @@ export default function ConversationPage({ params }: { params: { id: string } })
       console.error("[useStream] error", err)
       setStreamError(err.message)
       setAgentStatus(null)
+      setToolCall(null)
       setIngestProgress(null)
       streamingContentRef.current = ""
       setStreamingContent("")
@@ -69,6 +72,10 @@ export default function ConversationPage({ params }: { params: { id: string } })
     onIngestComplete: useCallback((_count: number) => {
       // Ingestion done; Phase 2 (agent) begins — clear progress indicator
       setIngestProgress(null)
+    }, []),
+
+    onToolCall: useCallback((tc: ToolCall) => {
+      setToolCall(tc)
     }, []),
   })
 
@@ -94,6 +101,7 @@ export default function ConversationPage({ params }: { params: { id: string } })
       streamingContentRef.current = ""
       setStreamingContent("")
       setAgentStatus(null)
+      setToolCall(null)
       setStreamingSources([])
       setIngestProgress(null)
 
@@ -127,6 +135,7 @@ export default function ConversationPage({ params }: { params: { id: string } })
         messages={messages}
         streamingContent={streamingContent}
         agentStatus={agentStatus}
+        toolCall={toolCall}
         streamingSources={streamingSources}
         isStreaming={isStreaming}
       />
