@@ -8,6 +8,7 @@ import useStream from "@/hooks/useStream"
 import { useConversations } from "@/hooks/useConversations"
 import MessageList from "@/components/chat/MessageList"
 import InputBar from "@/components/chat/InputBar"
+import DocumentIngestionBanner from "@/components/chat/DocumentIngestionBanner"
 import type { IngestProgress, Source, ToolCall } from "@/lib/types"
 
 export default function ConversationPage({ params }: { params: { id: string } }) {
@@ -139,6 +140,13 @@ export default function ConversationPage({ params }: { params: { id: string } })
         streamingSources={streamingSources}
         isStreaming={isStreaming}
       />
+      {toolCall?.tool_name === "document_finder" &&
+        toolCall?.status === "ingesting" && (
+          <DocumentIngestionBanner
+            message={toolCall.message ?? "Ingesting document..."}
+            tool_name={toolCall.tool_name}
+          />
+        )}
       <InputBar
         onSend={handleSend}
         disabled={isStreaming}
