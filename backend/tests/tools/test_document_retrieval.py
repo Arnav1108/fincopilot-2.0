@@ -9,6 +9,7 @@ from app.tools.document_retrieval import DocumentRetrievalTool
 
 _TOOL = DocumentRetrievalTool()
 _USER_ID = uuid.uuid4()
+_CONV_ID = uuid.uuid4()
 
 
 def _make_chunk(ticker: str | None = None, doc_type: str | None = None) -> ChunkResult:
@@ -20,7 +21,7 @@ def _make_chunk(ticker: str | None = None, doc_type: str | None = None) -> Chunk
     return ChunkResult(
         chunk_id=uuid.uuid4(),
         document_id=uuid.uuid4(),
-        score=0.9,
+        similarity_score=0.9,
         content="sample content",
         metadata=meta,
     )
@@ -47,7 +48,7 @@ async def test_no_filters_returns_top_k():
     chunks = [_make_chunk() for _ in range(5)]
     p_factory, p_retrieve, retrieve_mock = _patch_retrieval(chunks)
     with p_factory, p_retrieve:
-        result = await _TOOL(DocumentRetrievalInput(query="test query", user_id=_USER_ID))
+        result = await _TOOL(DocumentRetrievalInput(query="test query", user_id=_USER_ID, conversation_id=_CONV_ID))
     assert len(result.chunks) == 5
 
 
@@ -57,7 +58,7 @@ async def test_ticker_filter_removes_non_matching():
     p_factory, p_retrieve, retrieve_mock = _patch_retrieval(chunks)
     with p_factory, p_retrieve:
         result = await _TOOL(
-            DocumentRetrievalInput(query="earnings", user_id=_USER_ID, ticker="AAPL", top_k=5)
+            DocumentRetrievalInput(query="earnings", user_id=_USER_ID, conversation_id=_CONV_ID, ticker="AAPL", top_k=5)
         )
     assert len(result.chunks) == 3
     assert all(c.metadata["ticker"] == "AAPL" for c in result.chunks)
@@ -67,7 +68,7 @@ async def test_ticker_filter_removes_non_matching():
 async def test_empty_result_is_not_error():
     p_factory, p_retrieve, _ = _patch_retrieval([])
     with p_factory, p_retrieve:
-        result = await _TOOL(DocumentRetrievalInput(query="nothing here", user_id=_USER_ID))
+        result = await _TOOL(DocumentRetrievalInput(query="nothing here", user_id=_USER_ID, conversation_id=_CONV_ID))
     assert result.chunks == []
 
 
@@ -76,6 +77,6 @@ async def test_user_id_always_scoped():
     specific_user = uuid.uuid4()
     p_factory, p_retrieve, retrieve_mock = _patch_retrieval([])
     with p_factory, p_retrieve:
-        await _TOOL(DocumentRetrievalInput(query="test", user_id=specific_user))
+        await _TOOL(DocumentRetrievalInput(query="test", user_id=specific_user, conversation_id=_CONV_ID))
     call_kwargs = retrieve_mock.call_args
     assert call_kwargs.kwargs["user_id"] == specific_user

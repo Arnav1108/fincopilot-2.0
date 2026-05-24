@@ -229,5 +229,5 @@ async def retrieve_debug(
     user: User = Depends(clerk_auth),
     db: AsyncSession = Depends(get_db),
 ):
-    results = await retrieval_service.retrieve(db, user.id, body.query, body.top_k)
+    results = await retrieval_service.retrieve(db, user.id, body.conversation_id, body.query, body.top_k)
     return RetrieveDebugResponse(results=results)

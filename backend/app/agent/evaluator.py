@@ -34,10 +34,13 @@ async def evaluator_node(state: AgentState) -> dict:
     try:
         reranked_chunks = state.get("reranked_chunks") or []
         if not reranked_chunks:
+            # No chunks → nothing to score or reformulate; route straight to synthesizer.
+            # Returning score=1.0 satisfies route_after_evaluator's ≥0.6 threshold so
+            # the retry loop is skipped entirely. Synthesizer handles the no-docs case.
             return {
-                "retrieval_quality_score": 0.0,
-                "relevance_score": 0.0,
-                "retry_count": state["retry_count"] + 1,
+                "retrieval_quality_score": 1.0,
+                "relevance_score": None,
+                "retry_count": state["retry_count"],
                 "query": state["query"],
             }
 

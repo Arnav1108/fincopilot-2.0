@@ -20,7 +20,7 @@ Available tools:
 - financial_calculator: Perform mathematical or financial calculations (DCF, ratios, growth rates). Input: expression or structured calculation description.
 - financial_data: Fetch live or historical financial data for a ticker (price, revenue, earnings, ratios). Input: ticker symbol and metric name.
 - news_fetch: Retrieve recent news articles for a company or topic. Input: company name or topic string.
-- document_retrieval: Search the user's uploaded document knowledge base using semantic search. Input: natural language query.
+- document_retrieval: Search the user's uploaded document knowledge base using semantic search. Input: a short, focused semantic search phrase (50–200 characters). Do NOT include instructions, context, or file names — only the core search terms.
 - sec_filing: Fetch SEC EDGAR filings (10-K, 10-Q, 8-K) for a company. Input: ticker symbol and filing type.
 
 Return a JSON object with a single key "steps" whose value is a list of plan step objects. Each step object must have exactly these four keys:

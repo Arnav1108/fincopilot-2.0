@@ -31,6 +31,7 @@ class DocumentListResponse(BaseModel):
 
 
 class RetrieveDebugRequest(BaseModel):
+    conversation_id: uuid.UUID
     query: str = Field(..., min_length=1, max_length=2000)
     top_k: int = Field(5, ge=1, le=20)
 
@@ -38,7 +39,7 @@ class RetrieveDebugRequest(BaseModel):
 class ChunkResult(BaseModel):
     chunk_id: uuid.UUID
     document_id: uuid.UUID
-    score: float
+    similarity_score: float
     content: str
     metadata: dict | None
 

@@ -15,6 +15,8 @@ from app.schemas.tools.news_fetch import NewsFetchInput
 from app.schemas.tools.sec_filing import SECFilingInput
 from app.tools import TOOL_REGISTRY, ToolError
 
+_MAX_RETRIEVAL_QUERY_LEN = 500  # embedding search quality doesn't improve beyond this
+
 _TOOL_INPUT_MODELS = {
     "document_retrieval": DocumentRetrievalInput,
     "financial_calculator": FinancialCalculatorInput,
@@ -36,7 +38,7 @@ async def executor_node(state: AgentState) -> dict:
             try:
                 raw = await TOOL_REGISTRY["document_retrieval"](
                     DocumentRetrievalInput(
-                        query=state["query"],
+                        query=state["query"][:_MAX_RETRIEVAL_QUERY_LEN],
                         user_id=state["user_id"],
                         conversation_id=state["conversation_id"],
                     )
@@ -110,6 +112,10 @@ async def executor_node(state: AgentState) -> dict:
                                 tool_input = {"query": tool_input["input"]}
                             tool_input.setdefault("user_id", state["user_id"])
                             tool_input.setdefault("conversation_id", state["conversation_id"])
+                            # Planner templates can expand into very long strings that hurt
+                            # embedding quality and fail schema validation. Truncate hard.
+                            if isinstance(tool_input.get("query"), str):
+                                tool_input["query"] = tool_input["query"][:_MAX_RETRIEVAL_QUERY_LEN]
                         tool_input = input_cls.model_validate(tool_input)
                     result = await TOOL_REGISTRY[step["tool_name"]](tool_input)
                     emit_event({"type": "tool_call", "tool_name": step["tool_name"], "step_id": step_id, "status": "complete"})
@@ -167,6 +173,18 @@ async def executor_node(state: AgentState) -> dict:
 
 
 def _normalize_chunks(raw: Any) -> list[ChunkDict]:
+    # DocumentRetrievalOutput is a Pydantic model with a .chunks list of ChunkResult objects.
+    # The tool always returns this type — unwrap it before any other checks.
+    if hasattr(raw, "chunks"):
+        return [
+            ChunkDict(
+                content=chunk.content,
+                metadata={**(chunk.metadata or {}), "chunk_id": str(chunk.chunk_id), "document_id": str(chunk.document_id)},
+                score=chunk.similarity_score,
+            )
+            for chunk in raw.chunks
+            if chunk.content
+        ]
     if not isinstance(raw, list):
         return []
     out: list[ChunkDict] = []

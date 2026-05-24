@@ -111,7 +111,7 @@ async def _ingest_files(
             await db.commit()
             await db.refresh(doc)
 
-        file_path = f"/tmp/{doc.id}.{file_type}"
+        file_path = f"/app/uploads/{doc.id}.{file_type}"
         with open(file_path, "wb") as fh:
             fh.write(data)
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -40,3 +41,6 @@ class MessageRead(BaseModel):
     role: str
     content: str
     created_at: datetime
+    rag_used: bool = False
+    relevance_score: Optional[float] = None
+    retrieved_chunk_ids: Optional[list[str]] = None

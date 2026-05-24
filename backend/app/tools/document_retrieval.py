@@ -25,6 +25,7 @@ class DocumentRetrievalTool(BaseTool[DocumentRetrievalInput, DocumentRetrievalOu
             chunks = await retrieval_service.retrieve(
                 db=db,
                 user_id=input.user_id,
+                conversation_id=input.conversation_id,
                 query=input.query,
                 top_k=fetch_k,
             )
