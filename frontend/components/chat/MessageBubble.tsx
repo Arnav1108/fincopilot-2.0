@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils"
 import type { MessageRead, Source } from "@/lib/types"
 import AgentStatus from "./AgentStatus"
 import SourceList from "./SourceList"
+import ComparisonTable, { hasMarkdownTable } from "./ComparisonTable"
 
 // ── RAG badge ─────────────────────────────────────────────────────────────────
 
@@ -96,6 +97,8 @@ export default function MessageBubble({
   const isUser = message.role === "user"
   const isEmpty = message.content === ""
   const hasSources = !isStreaming && sources && sources.length > 0
+  const showTable =
+    !isUser && !isStreaming && !isEmpty && hasMarkdownTable(message.content)
 
   // Show RAG badge on settled assistant messages that have the field set
   const showRagBadge =
@@ -119,7 +122,11 @@ export default function MessageBubble({
           isEmpty && "text-muted-foreground",
         )}
       >
-        {isEmpty ? "…" : message.content}
+        {isEmpty
+          ? "…"
+          : showTable
+            ? <ComparisonTable content={message.content} />
+            : message.content}
       </div>
 
       {agentStatus && <AgentStatus node={agentStatus} />}
