@@ -112,7 +112,7 @@ export default function useStream(options: UseStreamOptions): UseStreamResult {
                 onToken(data.token as string)
                 break
               case "sources":
-                onSources((data.sources as Source[]) ?? [])
+                onSources((data.chunks as Source[]) ?? [])
                 break
               case "done":
                 onDone((data.message_id as string | null) ?? null)

@@ -3,7 +3,7 @@ import json
 import os
 import time
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 import openai
 import pypdf
@@ -241,7 +241,7 @@ def ingest_document(
         # 1. Fetch document and set processing
         doc = db.get(Document, uuid.UUID(document_id))
         doc.status = DocumentStatus.processing
-        doc.updated_at = datetime.utcnow()
+        doc.updated_at = datetime.now(timezone.utc)
         db.commit()
         _publish_status(document_id, "processing")
 
@@ -258,7 +258,7 @@ def ingest_document(
         if len(full_text.strip()) < 50:
             doc.status = DocumentStatus.failed
             doc.error_message = "no extractable text"
-            doc.updated_at = datetime.utcnow()
+            doc.updated_at = datetime.now(timezone.utc)
             db.commit()
             _publish_status(document_id, "failed", error_message="no extractable text")
             return
@@ -280,7 +280,7 @@ def ingest_document(
                 doc = db.get(Document, uuid.UUID(document_id))
                 doc.status = DocumentStatus.failed
                 doc.error_message = str(exc)
-                doc.updated_at = datetime.utcnow()
+                doc.updated_at = datetime.now(timezone.utc)
                 db.commit()
                 _publish_status(document_id, "failed", error_message=str(exc))
                 log.error("task_failed", error=str(exc))
@@ -321,7 +321,7 @@ def ingest_document(
         # 8. Mark document ready
         doc.chunk_count = len(chunks)
         doc.status = DocumentStatus.ready
-        doc.updated_at = datetime.utcnow()
+        doc.updated_at = datetime.now(timezone.utc)
         db.commit()
         _publish_status(document_id, "ready", chunk_count=len(chunks))
 
@@ -343,7 +343,7 @@ def ingest_document(
             if doc is not None:
                 doc.status = DocumentStatus.failed
                 doc.error_message = str(exc)
-                doc.updated_at = datetime.utcnow()
+                doc.updated_at = datetime.now(timezone.utc)
                 db.commit()
                 _publish_status(document_id, "failed", error_message=str(exc))
         except Exception:

@@ -223,7 +223,7 @@ class SECFilingFetchTool(BaseTool[SECFilingInput, Union[SECFilingPreviewOutput, 
                 await db.refresh(doc)
                 doc_id = str(doc.id)
 
-        ingest_document.delay(doc_id, tmp_path)
+        ingest_document.delay(str(doc_id), tmp_path, "html", str(doc.conversation_id))
 
         logger.debug("tool_succeeded", tool_name="sec_filing_ingest", document_id=doc_id)
         return SECFilingIngestOutput(document_id=doc_id, status="pending")
