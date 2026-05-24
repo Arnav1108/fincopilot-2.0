@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { cn } from "@/lib/utils"
-import type { MessageRead, Source } from "@/lib/types"
+import type { MessageRead, Source, ToolCall } from "@/lib/types"
 import AgentStatus from "./AgentStatus"
 import SourceList from "./SourceList"
 import ComparisonTable, { hasMarkdownTable } from "./ComparisonTable"
@@ -41,6 +41,7 @@ function RagBadge({ ragUsed, relevanceScore, chunkIds }: RagBadgeProps) {
     <div className="flex flex-col gap-1">
       <button
         type="button"
+        data-testid="rag-badge"
         onClick={() => hasChunks && setExpanded((v) => !v)}
         className={cn(
           "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium transition-colors",
@@ -84,6 +85,7 @@ function RagBadge({ ragUsed, relevanceScore, chunkIds }: RagBadgeProps) {
 interface Props {
   message: MessageRead
   agentStatus?: string | null
+  toolCall?: ToolCall | null
   sources?: Source[]
   isStreaming?: boolean
 }
@@ -91,6 +93,7 @@ interface Props {
 export default function MessageBubble({
   message,
   agentStatus,
+  toolCall,
   sources,
   isStreaming,
 }: Props) {
@@ -106,7 +109,7 @@ export default function MessageBubble({
 
   if (isUser) {
     return (
-      <div className="flex justify-end">
+      <div data-testid="message-user" className="flex justify-end">
         <div className="max-w-[85%] rounded-3xl bg-muted px-4 py-3 text-sm leading-relaxed text-foreground">
           {message.content}
         </div>
@@ -115,7 +118,7 @@ export default function MessageBubble({
   }
 
   return (
-    <div className="flex flex-col gap-2">
+    <div data-testid="message-assistant" className="flex flex-col gap-2">
       <div
         className={cn(
           "text-sm leading-relaxed text-foreground",
@@ -129,7 +132,7 @@ export default function MessageBubble({
             : message.content}
       </div>
 
-      {agentStatus && <AgentStatus node={agentStatus} />}
+      {agentStatus && <AgentStatus node={agentStatus} toolCall={toolCall ?? undefined} />}
       {hasSources && <SourceList sources={sources!} />}
 
       {showRagBadge && (

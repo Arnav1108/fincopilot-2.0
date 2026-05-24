@@ -45,6 +45,8 @@ export default function ConversationItem({
 
   return (
     <div
+      data-testid="conversation-item"
+      data-conv-id={conversation.id}
       className={cn(
         "group flex items-center gap-1 px-2 py-1.5 rounded-md cursor-pointer text-sm select-none",
         isActive

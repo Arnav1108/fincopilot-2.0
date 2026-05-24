@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react"
 import MessageBubble from "./MessageBubble"
-import type { MessageRead, Source } from "@/lib/types"
+import type { MessageRead, Source, ToolCall } from "@/lib/types"
 
 const STREAMING_ID = "__streaming__"
 
@@ -10,6 +10,7 @@ interface Props {
   messages: MessageRead[]
   streamingContent: string
   agentStatus: string | null
+  toolCall: ToolCall | null
   streamingSources: Source[]
   isStreaming: boolean
 }
@@ -18,6 +19,7 @@ export default function MessageList({
   messages,
   streamingContent,
   agentStatus,
+  toolCall,
   streamingSources,
   isStreaming,
 }: Props) {
@@ -41,6 +43,7 @@ export default function MessageList({
   return (
     <div
       ref={containerRef}
+      data-testid="message-list"
       onScroll={handleScroll}
       className="flex-1 overflow-y-auto"
     >
@@ -67,6 +70,7 @@ export default function MessageList({
                 created_at: new Date().toISOString(),
               }}
               agentStatus={agentStatus}
+              toolCall={toolCall}
               sources={streamingSources}
               isStreaming={true}
             />

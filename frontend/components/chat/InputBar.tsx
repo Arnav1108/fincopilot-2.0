@@ -190,7 +190,7 @@ export default function InputBar({
       >
         {/* Ingestion progress — visible while Phase 1 of the SSE stream runs */}
         {isIngesting && ingestProgress && (
-          <div className="flex items-center gap-2 px-4 pb-1 pt-3 text-xs text-muted-foreground">
+          <div data-testid="ingest-progress" className="flex items-center gap-2 px-4 pb-1 pt-3 text-xs text-muted-foreground">
             <Loader2 size={12} className="animate-spin flex-shrink-0" />
             <span>
               {ingestLabel}
@@ -206,6 +206,7 @@ export default function InputBar({
         {/* Textarea */}
         <textarea
           ref={textareaRef}
+          data-testid="message-input"
           value={value}
           onChange={handleChange}
           onKeyDown={handleKeyDown}
@@ -245,6 +246,7 @@ export default function InputBar({
             {/* Hidden native file input */}
             <input
               ref={fileInputRef}
+              data-testid="file-input"
               type="file"
               multiple
               accept=".pdf,.docx,.csv,.txt,.html"
@@ -260,6 +262,7 @@ export default function InputBar({
             {/* Paperclip — now enabled */}
             <button
               type="button"
+              data-testid="attach-button"
               onClick={() => fileInputRef.current?.click()}
               disabled={disabled}
               className={cn(
@@ -295,6 +298,7 @@ export default function InputBar({
           {/* Send button */}
           <button
             type="button"
+            data-testid="send-button"
             onClick={submit}
             disabled={!canSend}
             className={cn(

@@ -79,6 +79,7 @@ export default function Sidebar() {
           </span>
           <button
             onClick={handleNew}
+            data-testid="new-chat-button"
             className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
             aria-label="New chat"
           >
@@ -87,7 +88,7 @@ export default function Sidebar() {
         </div>
 
         {/* Conversation list */}
-        <div className="flex-1 overflow-y-auto px-2 py-1">
+        <div data-testid="conversation-list" className="flex-1 overflow-y-auto px-2 py-1">
           {isLoading ? (
             <p className="px-3 py-2 text-xs text-muted-foreground">Loading…</p>
           ) : conversations.length === 0 ? (
