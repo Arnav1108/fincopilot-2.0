@@ -13,8 +13,6 @@ from app.schemas.tools.document_finder import DocumentFinderInput
 from app.schemas.tools.document_retrieval import DocumentRetrievalInput
 from app.schemas.tools.financial_calculator import FinancialCalculatorInput
 from app.schemas.tools.financial_data import FinancialDataInput
-from app.schemas.tools.news_fetch import NewsFetchInput
-from app.schemas.tools.sec_filing import SECFilingInput
 from app.schemas.tools.web_search import WebSearchInput
 from app.tools import TOOL_REGISTRY, ToolError
 
@@ -26,8 +24,6 @@ _TOOL_INPUT_MODELS = {
     "document_retrieval": DocumentRetrievalInput,
     "financial_calculator": FinancialCalculatorInput,
     "financial_data": FinancialDataInput,
-    "news_fetch": NewsFetchInput,
-    "sec_filing": SECFilingInput,
     "web_search": WebSearchInput,
 }
 
