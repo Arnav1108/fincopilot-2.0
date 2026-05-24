@@ -67,6 +67,7 @@ class AgentState(TypedDict):
     final_output: str
     error: str | None
     model: str
+    has_uploaded_documents: bool
 
 
 # ---------------------------------------------------------------------------

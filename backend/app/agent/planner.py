@@ -34,6 +34,8 @@ Rules:
 - Steps with no shared dependencies may run in parallel — give them empty dependency lists.
 - A step may only depend on steps that appear earlier in the list.
 
+IMPORTANT — When has_documents is true, you MUST include a document_retrieval step as the very first step in every plan, before any other steps. Other steps that need document context should list this step in their dependencies.
+
 Example output for "Compare Apple and Microsoft revenue":
 {
   "steps": [
@@ -73,11 +75,16 @@ async def planner_node(state: AgentState) -> dict:
 
         client = openai.AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
 
+        has_docs = state.get("has_uploaded_documents", False)
+        user_content = state["query"]
+        if has_docs:
+            user_content = f"[has_documents: true]\n{state['query']}"
+
         response = await client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": _SYSTEM_PROMPT},
-                {"role": "user", "content": state["query"]},
+                {"role": "user", "content": user_content},
             ],
             response_format={"type": "json_object"},
             temperature=0,

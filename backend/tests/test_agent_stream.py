@@ -232,6 +232,7 @@ async def test_ingest_path_sse() -> None:
                 model="gpt-4o",
                 memory={"conversation_summary": "", "recent_messages": []},
                 document_ids=[],
+                has_uploaded_documents=False,
             )
         )
 
@@ -255,6 +256,7 @@ async def test_error_path_sse() -> None:
                 model="gpt-4o",
                 memory={"conversation_summary": "", "recent_messages": []},
                 document_ids=[],
+                has_uploaded_documents=False,
             )
         )
 

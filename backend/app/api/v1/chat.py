@@ -139,6 +139,7 @@ async def _stream_events(
     model: str,
     memory: dict,
     document_ids: list[uuid.UUID],
+    has_uploaded_documents: bool,
 ) -> AsyncGenerator[str, None]:
     # ── Phase 1: wait for file ingestion ─────────────────────────────────────
     if document_ids:
@@ -224,6 +225,7 @@ async def _stream_events(
         "final_output": "",
         "error": None,
         "analyst_profile": {},
+        "has_uploaded_documents": has_uploaded_documents,
     }
 
     run_id = uuid.uuid4()
@@ -486,6 +488,14 @@ async def stream_chat(
 
         memory = await MemoryManager().load_memory(db, str(user.id), str(conversation_id))
 
+        doc_count_result = await db.execute(
+            select(func.count(Document.id)).where(
+                Document.conversation_id == conversation_id,
+                Document.status == DocumentStatus.ready,
+            )
+        )
+        has_uploaded_documents = (doc_count_result.scalar() or 0) > 0
+
     # 2. Validate + queue uploaded files.  Raises 422 immediately on bad input
     #    so the client gets a normal HTTP error before any SSE frames are sent.
     document_ids: list[uuid.UUID] = []
@@ -509,6 +519,7 @@ async def stream_chat(
             model,
             memory,
             document_ids,
+            has_uploaded_documents,
         ),
         media_type="text/event-stream; charset=utf-8",
         headers={
