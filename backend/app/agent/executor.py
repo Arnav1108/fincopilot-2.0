@@ -9,6 +9,7 @@ import structlog
 from app.agent.state import AgentState, ChunkDict
 from app.agent.stream_context import emit_event
 from app.schemas.tools.company_comparator import CompanyComparatorInput
+from app.schemas.tools.document_finder import DocumentFinderInput
 from app.schemas.tools.document_retrieval import DocumentRetrievalInput
 from app.schemas.tools.financial_calculator import FinancialCalculatorInput
 from app.schemas.tools.financial_data import FinancialDataInput
@@ -21,6 +22,7 @@ _MAX_RETRIEVAL_QUERY_LEN = 500  # embedding search quality doesn't improve beyon
 
 _TOOL_INPUT_MODELS = {
     "company_comparator": CompanyComparatorInput,
+    "document_finder": DocumentFinderInput,
     "document_retrieval": DocumentRetrievalInput,
     "financial_calculator": FinancialCalculatorInput,
     "financial_data": FinancialDataInput,
@@ -120,6 +122,11 @@ async def executor_node(state: AgentState) -> dict:
                             # embedding quality and fail schema validation. Truncate hard.
                             if isinstance(tool_input.get("query"), str):
                                 tool_input["query"] = tool_input["query"][:_MAX_RETRIEVAL_QUERY_LEN]
+                        elif step["tool_name"] == "document_finder":
+                            if set(tool_input.keys()) == {"input"}:
+                                tool_input = {"query": tool_input["input"]}
+                            tool_input.setdefault("user_id", state["user_id"])
+                            tool_input.setdefault("conversation_id", state["conversation_id"])
                         tool_input = input_cls.model_validate(tool_input)
                     result = await TOOL_REGISTRY[step["tool_name"]](tool_input)
                     emit_event({"type": "tool_call", "tool_name": step["tool_name"], "step_id": step_id, "status": "complete"})

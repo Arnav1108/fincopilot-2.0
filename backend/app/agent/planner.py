@@ -24,10 +24,12 @@ Available tools:
 - sec_filing: Fetch SEC EDGAR filings (10-K, 10-Q, 8-K) for a company. Input: ticker symbol and filing type.
 - web_search: Search the web for news, market commentary, analyst opinions, or any current information not covered by other tools. Input: {"query": str, "search_type": "news|general|financial"}
 - company_comparator: Compare financial metrics across multiple companies side by side. Input: {"tickers": ["AAPL", "MSFT"], "metrics": ["revenue", "pe_ratio"]}
+- document_finder: Fetch and auto-ingest a financial document into this conversation so it can be queried via RAG. Use for SEC filings (10-K, 10-Q) or web documents (transcripts, presentations). filing_type must be one of: 10-K, 10-Q, transcript, presentation, other.
+  Input: {"query": str, "ticker": str|null, "filing_type": "10-K|10-Q|transcript|presentation|other", "user_id": "{user_id}", "conversation_id": "{conversation_id}"}
 
 Return a JSON object with a single key "steps" whose value is a list of plan step objects. Each step object must have exactly these four keys:
 - "id": unique string identifier for this step (e.g. "step_1", "step_2")
-- "tool_name": one of the seven tool names listed above
+- "tool_name": one of the eight tool names listed above
 - "input_template": string input for this tool; may reference {query} and {user_id}, and may reference a prior step's result using {<step_id>}
 - "dependencies": list of step ids this step depends on; empty list if none
 
@@ -36,7 +38,7 @@ Rules:
 - Steps with no shared dependencies may run in parallel — give them empty dependency lists.
 - A step may only depend on steps that appear earlier in the list.
 
-IMPORTANT — When has_documents is true, you MUST include a document_retrieval step as the very first step in every plan, before any other steps. Other steps that need document context should list this step in their dependencies.
+IMPORTANT — When has_documents is true, you MUST include a document_retrieval step as the very first step in every plan, before any other steps. Other steps that need document context should list this step in their dependencies. document_finder is only needed when the user explicitly requests fetching a new document.
 
 Example output for "Compare Apple and Microsoft revenue":
 {

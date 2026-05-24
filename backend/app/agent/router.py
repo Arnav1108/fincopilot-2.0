@@ -34,6 +34,15 @@ Category: complex
 Query: "Add this earnings transcript to the system."
 Category: ingest
 
+Query: "Get Apple's 10-K and summarise the main risks"
+Category: complex
+
+Query: "Fetch Tesla's latest earnings transcript and tell me the key takeaways"
+Category: complex
+
+Query: "Get Microsoft's 10-Q"
+Category: ingest
+
 Respond with only one word: simple, complex, or ingest.\
 """
 
