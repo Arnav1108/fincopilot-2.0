@@ -29,23 +29,32 @@ from app.tasks.ingestion import ingest_document
 router = APIRouter()
 logger = structlog.get_logger(__name__)
 
+_ALLOWED_EXTENSIONS: frozenset[str] = frozenset({"pdf", "docx", "csv", "txt", "html"})
+
 
 @router.post("/upload", status_code=status.HTTP_202_ACCEPTED)
 async def upload_document(
     file: UploadFile,
+    conversation_id: uuid.UUID = Form(...),
     doc_type: str = Form("other"),
     ticker: str | None = Form(None),
     filing_date: str | None = Form(None),
     user: User = Depends(clerk_auth),
     db: AsyncSession = Depends(get_db),
 ):
-    pdf_bytes = await file.read()
+    filename = file.filename or ""
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    file_type = ext if ext in _ALLOWED_EXTENSIONS else None
+    if file_type is None:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unsupported file type. Allowed extensions: {sorted(_ALLOWED_EXTENSIONS)}",
+        )
 
-    if len(pdf_bytes) > settings.MAX_UPLOAD_BYTES:
+    file_bytes = await file.read()
+
+    if len(file_bytes) > settings.MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=422, detail="file too large")
-
-    if pdf_bytes[:4] != b"%PDF":
-        raise HTTPException(status_code=422, detail="file must be a PDF")
 
     parsed_date: date | None = None
     if filing_date is not None:
@@ -61,7 +70,8 @@ async def upload_document(
 
     doc = Document(
         user_id=user.id,
-        filename=file.filename or "upload.pdf",
+        conversation_id=conversation_id,
+        filename=filename or f"upload.{file_type}",
         doc_type=validated_doc_type,
         ticker=ticker,
         filing_date=parsed_date,
@@ -71,11 +81,11 @@ async def upload_document(
     await db.commit()
     await db.refresh(doc)
 
-    file_path = f"/tmp/{doc.id}.pdf"
+    file_path = f"/tmp/{doc.id}.{file_type}"
     with open(file_path, "wb") as f:
-        f.write(pdf_bytes)
+        f.write(file_bytes)
 
-    ingest_document.delay(str(doc.id), file_path)
+    ingest_document.delay(str(doc.id), file_path, file_type, str(conversation_id))
 
     logger.info(
         "document_upload_received",

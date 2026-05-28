@@ -211,6 +211,7 @@ class SECFilingFetchTool(BaseTool[SECFilingInput, Union[SECFilingPreviewOutput, 
             async with db.begin():
                 doc = Document(
                     user_id=system_user_id,
+                    conversation_id=uuid.UUID(input.conversation_id) if input.conversation_id else None,
                     filename=f"{confirm['ticker']}_{confirm['filing_type']}.txt",
                     source_url=filing_url,
                     doc_type=doc_type,
@@ -223,7 +224,7 @@ class SECFilingFetchTool(BaseTool[SECFilingInput, Union[SECFilingPreviewOutput, 
                 await db.refresh(doc)
                 doc_id = str(doc.id)
 
-        ingest_document.delay(str(doc_id), tmp_path, "html", str(doc.conversation_id))
+        ingest_document.delay(str(doc_id), tmp_path, "html", input.conversation_id)
 
         logger.debug("tool_succeeded", tool_name="sec_filing_ingest", document_id=doc_id)
         return SECFilingIngestOutput(document_id=doc_id, status="pending")

@@ -9,6 +9,7 @@ class SECFilingInput(BaseModel):
     ticker: str
     filing_type: Literal["10-K", "10-Q"]
     confirmation_token: str | None = None
+    conversation_id: str | None = None
 
 
 class SECFilingPreviewOutput(BaseModel):
