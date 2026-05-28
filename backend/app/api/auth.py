@@ -1,3 +1,4 @@
+import time
 from datetime import datetime, timezone
 
 import httpx
@@ -12,15 +13,18 @@ from app.database import get_db
 from app.models.user import User
 
 _jwks_cache: dict | None = None
+_jwks_cache_at: float = 0.0
+_JWKS_TTL = 300.0  # 5 minutes
 
 
 async def _get_jwks() -> dict:
-    global _jwks_cache
-    if _jwks_cache is None:
+    global _jwks_cache, _jwks_cache_at
+    if _jwks_cache is None or time.monotonic() - _jwks_cache_at >= _JWKS_TTL:
         async with httpx.AsyncClient() as client:
             resp = await client.get(settings.CLERK_JWKS_URL)
             resp.raise_for_status()
             _jwks_cache = resp.json()
+            _jwks_cache_at = time.monotonic()
     return _jwks_cache
 
 
