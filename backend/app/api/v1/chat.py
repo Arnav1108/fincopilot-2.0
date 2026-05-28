@@ -504,6 +504,13 @@ async def stream_chat(
         if non_empty:
             document_ids = await _ingest_files(non_empty, user.id, conversation_id)
 
+    # Newly uploaded files will be ready by the time Phase 2 (agent) starts —
+    # Phase 1 polls until all document_ids reach DocumentStatus.ready before
+    # the agent runs. So flag the conversation as having documents regardless of
+    # the pre-ingestion count.
+    if document_ids:
+        has_uploaded_documents = True
+
     logger.info(
         "chat_stream_started",
         conversation_id=str(conversation_id),

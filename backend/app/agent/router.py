@@ -15,6 +15,8 @@ Categories:
 - complex: A multi-step research question requiring multiple tools, comparisons, calculations, or synthesising information from several sources. Also use this when the user asks to fetch, retrieve, or download a document from the web or SEC EDGAR (the agent will use document_finder to acquire it).
 - ingest: The user wants to upload or add a LOCAL file they have provided directly. Not a research question and not a web/SEC fetch.
 
+IMPORTANT: When the context includes [has_documents: true], files are ALREADY ingested and ready to query. Any question about their content (summarise, describe, analyse, explain) is "simple" or "complex" — NEVER "ingest". Only classify as "ingest" when the user is asking to ADD a new file that is not yet in the system.
+
 Examples:
 Query: "What was Apple's revenue in Q3 2023?"
 Category: simple
@@ -26,6 +28,15 @@ Query: "Please ingest this 10-K filing for Tesla."
 Category: ingest
 
 Query: "Summarise the key risks mentioned in the uploaded document."
+Category: simple
+
+Query: "[has_documents: true]\nSummarise this document"
+Category: simple
+
+Query: "[has_documents: true]\nDescribe this document"
+Category: simple
+
+Query: "[has_documents: true]\nWhat does this file say about revenue?"
 Category: simple
 
 Query: "Build a DCF model for Amazon using the last four years of free cash flow and a 10% discount rate."
@@ -57,6 +68,8 @@ async def router_node(state: AgentState) -> dict:
 
         user_message = state["query"]
         context_parts: list[str] = []
+        if state.get("has_uploaded_documents"):
+            context_parts.append("[has_documents: true]")
         if state.get("conversation_summary"):
             context_parts.append(f"Conversation summary: {state['conversation_summary']}")
         if state.get("recent_messages"):

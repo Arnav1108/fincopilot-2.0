@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useRef, useState } from "react"
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
 import { ArrowUp, BarChart2, FileText, Loader2, Paperclip, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { IngestProgress } from "@/lib/types"
@@ -59,6 +59,10 @@ export default function InputBar({
 
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  // Mirrors `files` state but updated synchronously so submit() never reads a
+  // stale closure value when React hasn't committed the batch yet (React 18
+  // automatic batching defers state commits, causing a race with Playwright).
+  const filesRef = useRef<File[]>([])
 
   const isIngesting = Boolean(ingestProgress)
   const canSend = !disabled && value.trim().length > 0
@@ -87,15 +91,38 @@ export default function InputBar({
     if (errors.length) setFileError(errors.join(" · "))
 
     if (valid.length) {
-      setFiles((prev) => {
-        const existing = new Set(prev.map(fileKey))
-        return [...prev, ...valid.filter((f) => !existing.has(fileKey(f)))]
-      })
+      const existing = new Set(filesRef.current.map(fileKey))
+      const next = [...filesRef.current, ...valid.filter((f) => !existing.has(fileKey(f)))]
+      filesRef.current = next  // synchronous — always current for submit()
+      setFiles(next)           // async — drives the chip rendering
     }
   }, [])
 
+  // Native event listener so Playwright's setInputFiles (which dispatches an
+  // untrusted 'change' event that React's delegated handler may not catch)
+  // still reaches addFiles directly at the element level.
+  // useLayoutEffect runs synchronously after React commits the DOM (before
+  // paint), ensuring the listener is registered before Playwright's CDP
+  // setInputFiles fires the change event.
+  useLayoutEffect(() => {
+    const input = fileInputRef.current
+    if (!input) return
+    const onNativeChange = () => {
+      if (input.files && input.files.length > 0) {
+        addFiles(input.files)
+      }
+      // Defer reset so File objects remain valid until React commits the state.
+      setTimeout(() => {
+        if (fileInputRef.current) fileInputRef.current.value = ""
+      }, 0)
+    }
+    input.addEventListener("change", onNativeChange)
+    return () => input.removeEventListener("change", onNativeChange)
+  }, [addFiles])
+
   const removeFile = useCallback((index: number) => {
-    setFiles((prev) => prev.filter((_, i) => i !== index))
+    filesRef.current = filesRef.current.filter((_, i) => i !== index)
+    setFiles(filesRef.current)
     setFileError(null)
   }, [])
 
@@ -112,12 +139,16 @@ export default function InputBar({
 
   const submit = useCallback(() => {
     if (!canSend) return
-    onSend(value.trim(), files)
+    // Read from ref so we never send a stale empty array when React's batch
+    // hasn't committed the setFiles() call triggered by the native listener.
+    const filesToSend = filesRef.current
+    onSend(value.trim(), filesToSend)
+    filesRef.current = []
     setValue("")
     setFiles([])
     setFileError(null)
     if (textareaRef.current) textareaRef.current.style.height = "auto"
-  }, [canSend, onSend, value, files])
+  }, [canSend, onSend, value])
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -223,6 +254,7 @@ export default function InputBar({
             {files.map((f, i) => (
               <span
                 key={fileKey(f)}
+                data-testid="file-chip"
                 className="inline-flex max-w-[200px] items-center gap-1 rounded-full bg-muted px-2.5 py-1 text-xs text-foreground"
               >
                 <span aria-hidden>{fileIcon(f.name)}</span>
@@ -243,19 +275,19 @@ export default function InputBar({
         {/* Bottom toolbar */}
         <div className="flex items-center justify-between px-3 pb-3 pt-1">
           <div className="flex items-center gap-1">
-            {/* Hidden native file input */}
+            {/* Native file input — sr-only (not display:none) so Playwright's
+                setInputFiles can reach it. The native 'change' listener above
+                handles addFiles + deferred reset; onChange is a React fallback. */}
             <input
               ref={fileInputRef}
               data-testid="file-input"
               type="file"
               multiple
               accept=".pdf,.docx,.csv,.txt,.html"
-              className="hidden"
-              aria-hidden
+              className="sr-only"
+              tabIndex={-1}
               onChange={(e) => {
                 if (e.target.files) addFiles(e.target.files)
-                // Reset so the same file can be re-added after removal
-                e.target.value = ""
               }}
             />
 
