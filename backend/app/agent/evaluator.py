@@ -59,7 +59,7 @@ async def evaluator_node(state: AgentState) -> dict:
         )
 
         score_response = await client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=settings.EVALUATOR_MODEL,
             messages=[
                 {"role": "system", "content": _SCORE_SYSTEM_PROMPT},
                 {"role": "user", "content": score_user_message},
@@ -97,7 +97,7 @@ async def evaluator_node(state: AgentState) -> dict:
 
         # Reformulate query for retry
         reformulate_response = await client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=settings.EVALUATOR_MODEL,
             messages=[
                 {"role": "system", "content": _REFORMULATE_SYSTEM_PROMPT},
                 {"role": "user", "content": state["query"]},

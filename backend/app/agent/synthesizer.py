@@ -61,7 +61,7 @@ async def synthesizer_node(state: AgentState) -> dict:
             system_prompt = _SYSTEM_PROMPT_RAG
             include_chunks = True
 
-        model = state.get("model") or "gpt-4o"
+        model = state.get("model") or settings.SYNTHESIZER_MODEL
 
         # Build user message
         parts: list[str] = []

@@ -124,7 +124,7 @@ class CompanyComparatorTool(BaseTool[CompanyComparatorInput, CompanyComparatorOu
 
         logger.debug("tool_called", tool_name="company_comparator", tickers=input.tickers, metrics=input.metrics)
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
 
         async def _fetch_one(ticker: str) -> CompanyMetrics:
             try:

@@ -83,7 +83,7 @@ async def planner_node(state: AgentState) -> dict:
             user_content = f"[has_documents: true]\n{state['query']}"
 
         response = await client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=settings.PLANNER_MODEL,
             messages=[
                 {"role": "system", "content": _SYSTEM_PROMPT},
                 {"role": "user", "content": user_content},

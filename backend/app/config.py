@@ -16,6 +16,11 @@ class Settings(BaseSettings):
     LANGSMITH_API_KEY: str = ""
     LANGSMITH_PROJECT: str = "fincopilot-dev"
     LANGCHAIN_TRACING_V2: bool = True
+    ROUTER_MODEL: str = "gpt-4o-mini"
+    PLANNER_MODEL: str = "gpt-4o-mini"
+    EVALUATOR_MODEL: str = "gpt-4o-mini"
+    SYNTHESIZER_MODEL: str = "gpt-4o"
+    SUMMARY_MODEL: str = "gpt-4o-mini"
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 

@@ -19,6 +19,7 @@ import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.models.conversation import Conversation, Message
 
 
@@ -142,7 +143,7 @@ class MemoryManager:
         user_message = "\n".join(parts)
 
         response = await openai_client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=settings.SUMMARY_MODEL,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_message},

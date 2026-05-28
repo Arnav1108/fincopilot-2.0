@@ -66,7 +66,7 @@ async def router_node(state: AgentState) -> dict:
             user_message = "\n".join(context_parts) + f"\n\nCurrent query: {state['query']}"
 
         response = await client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=settings.ROUTER_MODEL,
             messages=[
                 {"role": "system", "content": _SYSTEM_PROMPT},
                 {"role": "user", "content": user_message},

@@ -77,7 +77,7 @@ class FinancialDataTool(BaseTool[FinancialDataInput, FinancialDataOutput]):
             )
 
         logger.debug("tool_called", tool_name="financial_data", ticker=input.ticker)
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         data = await loop.run_in_executor(None, _fetch_all, input.ticker)
 
         income_df = data["income"]

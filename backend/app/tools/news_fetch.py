@@ -48,7 +48,7 @@ class NewsFetchTool(BaseTool[NewsFetchInput, NewsFetchOutput]):
                 note="Tavily date filtering support varies by plan; results may not be filtered",
             )
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         try:
             raw_results = await loop.run_in_executor(
                 None, _run_tavily, input.ticker, input.max_results, date_from, date_to
