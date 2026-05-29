@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import tempfile
 import uuid
 
@@ -20,7 +21,7 @@ from app.tools.base import BaseTool, ToolNotFoundError, ToolUpstreamError
 logger = structlog.get_logger(__name__)
 
 _SEC_FILING_TYPES: frozenset[str] = frozenset({"10-K", "10-Q"})
-_POLL_TIMEOUT = 120.0
+_POLL_TIMEOUT = 600.0
 _HTTP_TIMEOUT = 30.0
 _CIK_CACHE: dict[str, str] = {}
 _TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
@@ -76,8 +77,9 @@ class DocumentFinderTool(BaseTool[DocumentFinderInput, DocumentFinderOutput]):
             result = await db.execute(
                 select(Document).where(
                     Document.ticker == resolved_ticker,
-                    Document.doc_type == doc_type,
+                    Document.doc_type == str(doc_type.value),
                     Document.status == DocumentStatus.ready,
+                    Document.conversation_id == uuid.UUID(input.conversation_id),
                 )
             )
             existing = result.scalar_one_or_none()
@@ -122,13 +124,33 @@ class DocumentFinderTool(BaseTool[DocumentFinderInput, DocumentFinderOutput]):
 
             filing_resp = await client.get(filing_url)
             filing_resp.raise_for_status()
-            content = filing_resp.content
+            raw_text = filing_resp.text
 
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as tmp:
+        # Extract only the 10-K section — the full .txt is 30-50MB with many embedded docs
+        extracted = None
+        for doc in raw_text.split("<DOCUMENT>"):
+            if "<TYPE>10-K\n" in doc or "<TYPE>10-K\r" in doc:
+                start = doc.find("<TEXT>")
+                end = doc.find("</TEXT>")
+                if start != -1 and end != -1:
+                    extracted = doc[start + 6:end]
+                    break
+
+        if not extracted or len(extracted) < 1000:
+            logger.warning("sec_10k_extraction_failed", ticker=ticker)
+            extracted = raw_text  # fallback to full file
+
+        content = extracted.encode("utf-8")
+        file_ext = "html"
+
+        import os as _os
+        _os.makedirs("/app/uploads", exist_ok=True)
+        import tempfile as _tempfile
+        tmp_fd, tmp_path = _tempfile.mkstemp(suffix=f".{file_ext}", dir="/app/uploads")
+        with _os.fdopen(tmp_fd, "wb") as tmp:
             tmp.write(content)
-            tmp_path = tmp.name
 
-        return await self._ingest_and_wait(input, filing_url, tmp_path, "txt", ticker)
+        return await self._ingest_and_wait(input, filing_url, tmp_path, file_ext, ticker)
 
     # ── Web (Tavily) route ─────────────────────────────────────────────────────
 
@@ -155,9 +177,11 @@ class DocumentFinderTool(BaseTool[DocumentFinderInput, DocumentFinderOutput]):
             resp.raise_for_status()
             content = resp.content
 
-        with tempfile.NamedTemporaryFile(delete=False, suffix=f".{file_type}") as tmp:
+        uploads_dir = "/app/uploads"
+        os.makedirs(uploads_dir, exist_ok=True)
+        tmp_fd, tmp_path = tempfile.mkstemp(suffix=f".{file_type}", dir=uploads_dir)
+        with os.fdopen(tmp_fd, "wb") as tmp:
             tmp.write(content)
-            tmp_path = tmp.name
 
         return await self._ingest_and_wait(input, source_url, tmp_path, file_type, ticker)
 
@@ -172,7 +196,10 @@ class DocumentFinderTool(BaseTool[DocumentFinderInput, DocumentFinderOutput]):
         ticker: str,
     ) -> DocumentFinderOutput:
         doc_type = _DOC_TYPE_MAP.get(input.filing_type, DocumentType.other)
-        user_uuid = uuid.UUID(input.user_id) if input.user_id else uuid.uuid4()
+        try:
+            user_uuid = uuid.UUID(input.user_id) if input.user_id else uuid.uuid4()
+        except ValueError:
+            user_uuid = uuid.uuid4()
 
         async with AsyncSessionFactory() as db:
             async with db.begin():
@@ -181,7 +208,7 @@ class DocumentFinderTool(BaseTool[DocumentFinderInput, DocumentFinderOutput]):
                     conversation_id=uuid.UUID(input.conversation_id),
                     filename=f"{ticker}_{input.filing_type}.{file_type}",
                     source_url=source_url,
-                    doc_type=doc_type,
+                    doc_type=str(doc_type.value),
                     ticker=ticker,
                     status=DocumentStatus.pending,
                 )
