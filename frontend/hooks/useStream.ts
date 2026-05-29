@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useState } from "react"
-import type { IngestProgress, Source, ToolCall } from "@/lib/types"
+import type { ConfirmationRequired, IngestProgress, Source, ToolCall } from "@/lib/types"
 
 const BASE = process.env.NEXT_PUBLIC_API_URL
 
@@ -17,6 +17,10 @@ interface UseStreamOptions {
   onIngestComplete?: (documentCount: number) => void
   /** Called for each tool_call SSE event emitted by the agent executor. */
   onToolCall?: (toolCall: ToolCall) => void
+  /** Called when the backend needs user confirmation before downloading a filing. */
+  onConfirmationRequired?: (req: ConfirmationRequired) => void
+  /** Called when the backend acknowledges the user's yes/no confirmation. */
+  onConfirmed?: (token: string, answer: string) => void
 }
 
 interface UseStreamResult {
@@ -39,6 +43,8 @@ export default function useStream(options: UseStreamOptions): UseStreamResult {
     onIngestProgress,
     onIngestComplete,
     onToolCall,
+    onConfirmationRequired,
+    onConfirmed,
   } = options
 
   const [isStreaming, setIsStreaming] = useState(false)
@@ -130,6 +136,12 @@ export default function useStream(options: UseStreamOptions): UseStreamResult {
                   message: data.message as string | undefined,
                 })
                 break
+              case "confirmation_required":
+                onConfirmationRequired?.(data as unknown as ConfirmationRequired)
+                break
+              case "confirmed":
+                onConfirmed?.(data.token as string, data.answer as string)
+                break
               case "error":
                 onError(
                   new Error(
@@ -150,7 +162,7 @@ export default function useStream(options: UseStreamOptions): UseStreamResult {
         setIsStreaming(false)
       }
     },
-    [onToken, onNodeUpdate, onSources, onDone, onError, onIngestProgress, onIngestComplete, onToolCall],
+    [onToken, onNodeUpdate, onSources, onDone, onError, onIngestProgress, onIngestComplete, onToolCall, onConfirmationRequired, onConfirmed],
   )
 
   return { startStream, isStreaming }

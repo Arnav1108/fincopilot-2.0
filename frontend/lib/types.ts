@@ -1,3 +1,17 @@
+export interface DocumentRead {
+  id: string
+  filename: string
+  doc_type: string
+  status: 'pending' | 'processing' | 'ready' | 'failed'
+  chunk_count: number | null
+  ticker: string | null
+  created_at: string
+}
+
+export interface ConversationDocumentsResponse {
+  documents: DocumentRead[]
+}
+
 export interface ConversationRead {
   id: string
   title: string
@@ -58,6 +72,14 @@ export interface ProfileUpdate {
   custom_context?: string | null
 }
 
+export interface ConfirmationRequired {
+  token: string
+  ticker: string
+  filing_type: string
+  period: string
+  description: string
+}
+
 export type SseEvent =
   | { event: "node_update"; data: { node: string; status: string } }
   | { event: "tool_call"; data: { tool: string; input: Record<string, unknown> } }
@@ -66,4 +88,6 @@ export type SseEvent =
   | { event: "done"; data: { message_id: string | null } }
   | { event: "ingest_progress"; data: IngestProgress }
   | { event: "ingest_complete"; data: { document_count: number } }
+  | { event: "confirmation_required"; data: ConfirmationRequired }
+  | { event: "confirmed"; data: { token: string; answer: string } }
   | { event: "error"; data: { code?: string; message: string; failed_files?: string[]; pending_ids?: string[] } }

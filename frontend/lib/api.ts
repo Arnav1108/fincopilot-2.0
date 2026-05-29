@@ -1,4 +1,4 @@
-import type { ConversationRead, MessageRead, ProfileRead, ProfileUpdate } from "@/lib/types"
+import type { ConversationDocumentsResponse, ConversationRead, DocumentRead, MessageRead, ProfileRead, ProfileUpdate } from "@/lib/types"
 
 const BASE = process.env.NEXT_PUBLIC_API_URL
 
@@ -67,4 +67,12 @@ export function updateProfile(token: string, body: ProfileUpdate): Promise<Profi
     method: "PUT",
     body: JSON.stringify(body),
   })
+}
+
+export async function getConversationDocuments(token: string, conversationId: string): Promise<DocumentRead[]> {
+  const response = await apiFetch<ConversationDocumentsResponse>(
+    `/conversations/${conversationId}/documents`,
+    token,
+  )
+  return response.documents
 }

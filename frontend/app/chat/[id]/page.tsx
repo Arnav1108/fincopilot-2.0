@@ -9,13 +9,17 @@ import { useConversations } from "@/hooks/useConversations"
 import MessageList from "@/components/chat/MessageList"
 import InputBar from "@/components/chat/InputBar"
 import DocumentIngestionBanner from "@/components/chat/DocumentIngestionBanner"
-import type { IngestProgress, Source, ToolCall } from "@/lib/types"
+import ConfirmationBanner from "@/components/chat/ConfirmationBanner"
+import DocumentPanel from "@/components/chat/DocumentPanel"
+import type { ConfirmationRequired, IngestProgress, Source, ToolCall } from "@/lib/types"
+
+const BASE = process.env.NEXT_PUBLIC_API_URL
 
 export default function ConversationPage({ params }: { params: { id: string } }) {
   const id = params.id
   const { getToken } = useAuth()
   const { messages, isLoading, notFound, load, addMessage } = useMessages()
-  const { bumpToTop } = useConversations()
+  const { bumpToTop, refresh } = useConversations()
 
   const [streamingContent, setStreamingContent] = useState("")
   const [agentStatus, setAgentStatus] = useState<string | null>(null)
@@ -23,6 +27,8 @@ export default function ConversationPage({ params }: { params: { id: string } })
   const [streamingSources, setStreamingSources] = useState<Source[]>([])
   const [ingestProgress, setIngestProgress] = useState<IngestProgress | null>(null)
   const [streamError, setStreamError] = useState<string | null>(null)
+  const [isPanelOpen, setIsPanelOpen] = useState(true)
+  const [confirmationRequest, setConfirmationRequest] = useState<ConfirmationRequired | null>(null)
 
   // Ref tracks accumulated content so onDone never has a stale closure
   const streamingContentRef = useRef("")
@@ -50,10 +56,12 @@ export default function ConversationPage({ params }: { params: { id: string } })
         setAgentStatus(null)
         setToolCall(null)
         setIngestProgress(null)
+        setConfirmationRequest(null)
         bumpToTop(id)
         await load(id)
+        await refresh()
       },
-      [bumpToTop, id, load],
+      [bumpToTop, id, load, refresh],
     ),
 
     onError: useCallback((err: Error) => {
@@ -62,6 +70,7 @@ export default function ConversationPage({ params }: { params: { id: string } })
       setAgentStatus(null)
       setToolCall(null)
       setIngestProgress(null)
+      setConfirmationRequest(null)
       streamingContentRef.current = ""
       setStreamingContent("")
     }, []),
@@ -78,7 +87,32 @@ export default function ConversationPage({ params }: { params: { id: string } })
     onToolCall: useCallback((tc: ToolCall) => {
       setToolCall(tc)
     }, []),
+
+    onConfirmationRequired: useCallback((req: ConfirmationRequired) => {
+      setConfirmationRequest(req)
+    }, []),
+
+    onConfirmed: useCallback((_token: string, _answer: string) => {
+      setConfirmationRequest(null)
+    }, []),
   })
+
+  const sendConfirmation = useCallback(
+    async (answer: "yes" | "no", token: string) => {
+      setConfirmationRequest(null)
+      const authToken = await getToken()
+      if (!authToken) return
+      const body = new FormData()
+      body.append("message", `CONFIRM:${answer}:${token}`)
+      body.append("model", "gpt-4o")
+      fetch(`${BASE}/api/v1/conversations/${id}/stream`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${authToken}` },
+        body,
+      }).catch(() => {})
+    },
+    [getToken, id],
+  )
 
   useEffect(() => {
     load(id)
@@ -131,27 +165,41 @@ export default function ConversationPage({ params }: { params: { id: string } })
   }
 
   return (
-    <div className="flex-1 flex flex-col min-h-0">
-      <MessageList
-        messages={messages}
-        streamingContent={streamingContent}
-        agentStatus={agentStatus}
-        toolCall={toolCall}
-        streamingSources={streamingSources}
-        isStreaming={isStreaming}
-      />
-      {toolCall?.tool_name === "document_finder" &&
-        toolCall?.status === "ingesting" && (
-          <DocumentIngestionBanner
-            message={toolCall.message ?? "Ingesting document..."}
-            tool_name={toolCall.tool_name}
+    <div className="flex-1 flex min-h-0">
+      <div className="flex-1 flex flex-col min-h-0">
+        <MessageList
+          messages={messages}
+          streamingContent={streamingContent}
+          agentStatus={agentStatus}
+          toolCall={toolCall}
+          streamingSources={streamingSources}
+          isStreaming={isStreaming}
+        />
+        {toolCall?.tool_name === "document_finder" &&
+          toolCall?.status === "ingesting" && (
+            <DocumentIngestionBanner
+              message={toolCall.message ?? "Ingesting document..."}
+              tool_name={toolCall.tool_name}
+            />
+          )}
+        {confirmationRequest && (
+          <ConfirmationBanner
+            request={confirmationRequest}
+            onConfirm={() => sendConfirmation("yes", confirmationRequest.token)}
+            onCancel={() => sendConfirmation("no", confirmationRequest.token)}
           />
         )}
-      <InputBar
-        onSend={handleSend}
-        disabled={isStreaming}
-        ingestProgress={ingestProgress}
-        streamError={streamError}
+        <InputBar
+          onSend={handleSend}
+          disabled={isStreaming}
+          ingestProgress={ingestProgress}
+          streamError={streamError}
+        />
+      </div>
+      <DocumentPanel
+        conversationId={id}
+        isOpen={isPanelOpen}
+        onToggle={() => setIsPanelOpen((v) => !v)}
       />
     </div>
   )
