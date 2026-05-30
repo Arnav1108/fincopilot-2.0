@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+import time
 from typing import Any
 
 import structlog
@@ -14,6 +15,25 @@ from app.schemas.tools.company_comparator import (
 from app.tools.base import BaseTool, ToolError, ToolValidationError
 
 logger = structlog.get_logger(__name__)
+
+
+def _with_retry(fn, ticker: str, max_attempts: int = 3):
+    last_exc: Exception | None = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return fn()
+        except Exception as exc:
+            last_exc = exc
+            if attempt < max_attempts:
+                logger.warning(
+                    "yfinance_retry",
+                    ticker=ticker,
+                    attempt=attempt,
+                    error=str(exc),
+                )
+                time.sleep(2 ** (attempt - 1))
+    raise last_exc  # type: ignore[misc]
+
 
 _INCOME_METRICS: dict[str, str] = {
     "revenue": "Total Revenue",
@@ -66,31 +86,31 @@ def _fetch_company(ticker_str: str, metrics: list[str]) -> dict[str, float | Non
 
     if any(m in _INCOME_METRICS for m in metrics):
         try:
-            income = t.income_stmt
+            income = _with_retry(lambda: t.income_stmt, ticker_str)
         except Exception:
             pass
 
     if any(m in _BALANCE_METRICS for m in metrics):
         try:
-            balance = t.balance_sheet
+            balance = _with_retry(lambda: t.balance_sheet, ticker_str)
         except Exception:
             pass
 
     if any(m in _CASHFLOW_METRICS for m in metrics):
         try:
-            cashflow = t.cashflow
+            cashflow = _with_retry(lambda: t.cashflow, ticker_str)
         except Exception:
             pass
 
     if any(m in ("market_cap", "current_price") for m in metrics):
         try:
-            fast_info = t.fast_info
+            fast_info = _with_retry(lambda: t.fast_info, ticker_str)
         except Exception:
             pass
 
     if any(m not in _ALL_KNOWN_METRICS for m in metrics):
         try:
-            info = t.info or {}
+            info = _with_retry(lambda: t.info or {}, ticker_str)
         except Exception:
             pass
 

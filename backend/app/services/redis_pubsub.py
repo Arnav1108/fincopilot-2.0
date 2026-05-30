@@ -2,12 +2,24 @@ from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
 import redis.asyncio as aioredis
+import structlog
 
 from app.config import settings
 
+logger = structlog.get_logger(__name__)
+
+_pool = aioredis.ConnectionPool.from_url(
+    settings.REDIS_URL,
+    max_connections=20,
+    decode_responses=True,
+)
+logger.debug("redis_pool_initialized", max_connections=20)
+
+_redis_client = aioredis.Redis(connection_pool=_pool)
+
 
 def get_async_redis() -> aioredis.Redis:
-    return aioredis.Redis.from_url(settings.REDIS_URL, decode_responses=True)
+    return _redis_client
 
 
 @asynccontextmanager

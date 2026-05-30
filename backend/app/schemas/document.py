@@ -46,3 +46,13 @@ class ChunkResult(BaseModel):
 
 class RetrieveDebugResponse(BaseModel):
     results: list[ChunkResult]
+
+
+class ChunkRead(BaseModel):
+    id: uuid.UUID
+    document_id: uuid.UUID
+    conversation_id: uuid.UUID
+    chunk_index: int
+    content: str
+    metadata: dict | None
+    created_at: datetime

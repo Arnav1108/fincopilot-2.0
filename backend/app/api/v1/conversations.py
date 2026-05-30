@@ -10,10 +10,10 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 from app.api.auth import clerk_auth
 from app.database import get_db
 from app.models.conversation import Conversation, Message
-from app.models.document import Document
+from app.models.document import Document, DocumentChunk
 from app.models.user import User
 from app.schemas.conversation import ConversationRead, ConversationUpdate, MessageRead
-from app.schemas.document import DocumentListResponse, DocumentRead
+from app.schemas.document import ChunkRead, DocumentListResponse, DocumentRead
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)
@@ -152,3 +152,42 @@ async def list_conversation_documents(
         count=len(docs),
     )
     return DocumentListResponse(documents=[DocumentRead.model_validate(d) for d in docs])
+
+
+@router.get("/{conversation_id}/chunks/{chunk_id}", response_model=ChunkRead)
+async def get_chunk(
+    conversation_id: uuid.UUID,
+    chunk_id: uuid.UUID,
+    user: User = Depends(clerk_auth),
+    db: AsyncSession = Depends(get_db),
+):
+    stmt = select(DocumentChunk).where(
+        DocumentChunk.id == chunk_id,
+        DocumentChunk.conversation_id == conversation_id,
+        DocumentChunk.user_id == user.id,
+    )
+    result = await db.execute(stmt)
+    chunk = result.scalar_one_or_none()
+    if chunk is None:
+        logger.warning(
+            "chunk_not_found",
+            chunk_id=str(chunk_id),
+            conversation_id=str(conversation_id),
+            user_id=str(user.id),
+        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    logger.debug(
+        "chunk_fetched",
+        chunk_id=str(chunk_id),
+        conversation_id=str(conversation_id),
+        user_id=str(user.id),
+    )
+    return ChunkRead(
+        id=chunk.id,
+        document_id=chunk.document_id,
+        conversation_id=chunk.conversation_id,
+        chunk_index=chunk.chunk_index,
+        content=chunk.content,
+        metadata=chunk.chunk_metadata,
+        created_at=chunk.created_at,
+    )

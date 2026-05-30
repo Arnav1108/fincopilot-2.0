@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from datetime import datetime, timezone
 
 import structlog
@@ -15,6 +16,24 @@ from app.schemas.tools.financial_data import (
 from app.tools.base import BaseTool, ToolValidationError
 
 logger = structlog.get_logger(__name__)
+
+
+def _with_retry(fn, ticker: str, max_attempts: int = 3):
+    last_exc: Exception | None = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return fn()
+        except Exception as exc:
+            last_exc = exc
+            if attempt < max_attempts:
+                logger.warning(
+                    "yfinance_retry",
+                    ticker=ticker,
+                    attempt=attempt,
+                    error=str(exc),
+                )
+                time.sleep(2 ** (attempt - 1))
+    raise last_exc  # type: ignore[misc]
 
 
 def _safe_float(df, *row_keys: str) -> float | None:
@@ -38,7 +57,7 @@ def _fetch_all(ticker_str: str) -> dict:
     t = yf.Ticker(ticker_str)
     info = {}
     try:
-        fast = t.fast_info
+        fast = _with_retry(lambda: t.fast_info, ticker_str)
         info["current_price"] = getattr(fast, "last_price", None)
         info["market_cap"] = getattr(fast, "market_cap", None)
         info["currency"] = getattr(fast, "currency", None)
@@ -48,17 +67,17 @@ def _fetch_all(ticker_str: str) -> dict:
         info["currency"] = None
 
     try:
-        income = t.income_stmt
+        income = _with_retry(lambda: t.income_stmt, ticker_str)
     except Exception:
         income = None
 
     try:
-        balance = t.balance_sheet
+        balance = _with_retry(lambda: t.balance_sheet, ticker_str)
     except Exception:
         balance = None
 
     try:
-        cashflow = t.cashflow
+        cashflow = _with_retry(lambda: t.cashflow, ticker_str)
     except Exception:
         cashflow = None
 
