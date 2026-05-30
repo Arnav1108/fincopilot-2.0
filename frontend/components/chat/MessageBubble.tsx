@@ -4,8 +4,9 @@ import { useState } from "react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { cn } from "@/lib/utils"
-import type { MessageRead, Source, ToolCall } from "@/lib/types"
+import type { ChartData, MessageRead, Source, ToolCall } from "@/lib/types"
 import AgentStatus from "./AgentStatus"
+import ChartBlock from "./ChartBlock"
 import SourceList from "./SourceList"
 import ComparisonTable, { hasMarkdownTable } from "./ComparisonTable"
 
@@ -90,6 +91,7 @@ interface Props {
   toolCall?: ToolCall | null
   sources?: Source[]
   isStreaming?: boolean
+  streamingChartData?: ChartData | null
 }
 
 export default function MessageBubble({
@@ -98,6 +100,7 @@ export default function MessageBubble({
   toolCall,
   sources,
   isStreaming,
+  streamingChartData,
 }: Props) {
   const isUser = message.role === "user"
   const isEmpty = message.content === ""
@@ -207,6 +210,15 @@ export default function MessageBubble({
           relevanceScore={message.relevance_score}
           chunkIds={message.retrieved_chunk_ids}
         />
+      )}
+
+      {/* Settled message chart — from DB on reload */}
+      {!isUser && !isStreaming && message.chart_data && (
+        <ChartBlock data={message.chart_data as ChartData} />
+      )}
+      {/* Streaming chart — arrives via chart_data SSE event before done */}
+      {!isUser && isStreaming && streamingChartData && (
+        <ChartBlock data={streamingChartData} />
       )}
     </div>
   )

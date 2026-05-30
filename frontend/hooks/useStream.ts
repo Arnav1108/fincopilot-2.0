@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useState } from "react"
-import type { ConfirmationRequired, IngestProgress, Source, ToolCall } from "@/lib/types"
+import type { ChartData, ConfirmationRequired, IngestProgress, Source, ToolCall } from "@/lib/types"
 
 const BASE = process.env.NEXT_PUBLIC_API_URL
 
@@ -21,6 +21,8 @@ interface UseStreamOptions {
   onConfirmationRequired?: (req: ConfirmationRequired) => void
   /** Called when the backend acknowledges the user's yes/no confirmation. */
   onConfirmed?: (token: string, answer: string) => void
+  /** Called when a chart_data SSE event is received for the current response. */
+  onChartData?: (chartData: ChartData) => void
 }
 
 interface UseStreamResult {
@@ -45,6 +47,7 @@ export default function useStream(options: UseStreamOptions): UseStreamResult {
     onToolCall,
     onConfirmationRequired,
     onConfirmed,
+    onChartData,
   } = options
 
   const [isStreaming, setIsStreaming] = useState(false)
@@ -142,6 +145,9 @@ export default function useStream(options: UseStreamOptions): UseStreamResult {
               case "confirmed":
                 onConfirmed?.(data.token as string, data.answer as string)
                 break
+              case "chart_data":
+                onChartData?.(data as unknown as ChartData)
+                break
               case "error":
                 onError(
                   new Error(
@@ -162,7 +168,7 @@ export default function useStream(options: UseStreamOptions): UseStreamResult {
         setIsStreaming(false)
       }
     },
-    [onToken, onNodeUpdate, onSources, onDone, onError, onIngestProgress, onIngestComplete, onToolCall, onConfirmationRequired, onConfirmed],
+    [onToken, onNodeUpdate, onSources, onDone, onError, onIngestProgress, onIngestComplete, onToolCall, onConfirmationRequired, onConfirmed, onChartData],
   )
 
   return { startStream, isStreaming }

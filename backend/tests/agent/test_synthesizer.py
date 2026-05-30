@@ -41,21 +41,32 @@ def _err_envelope(tool_name: str = "financial_data", error: str = "API error") -
 
 
 async def _run_with_stream_mock(state: dict, tokens: list[str] = None) -> tuple[dict, MagicMock]:
-    """Run synthesizer_node with a streaming mock; return (result, mock_create)."""
+    """Run synthesizer_node with a streaming mock; return (result, mock_create).
+
+    Provides two side-effect values so tool-result paths (which make a second
+    non-streaming chart-extraction call) don't exhaust the mock.
+    """
     if tokens is None:
         tokens = ["answer"]
 
-    async def fake_stream(*args, **kwargs):
+    async def fake_stream():
         for tok in tokens:
             chunk = MagicMock()
             chunk.choices = [MagicMock()]
             chunk.choices[0].delta.content = tok
             yield chunk
 
-    mock_client = MagicMock()
-    mock_client.chat.completions.create = AsyncMock(return_value=fake_stream())
+    # Null-chart response consumed by the extraction call on tool-result paths
+    null_chart_resp = MagicMock()
+    null_chart_resp.choices = [MagicMock()]
+    null_chart_resp.choices[0].message.content = '{"chart_type": null}'
 
-    with patch("app.agent.synthesizer.openai.AsyncOpenAI", return_value=mock_client):
+    mock_client = MagicMock()
+    mock_client.chat.completions.create = AsyncMock(
+        side_effect=[fake_stream(), null_chart_resp]
+    )
+
+    with patch("app.agent.synthesizer.openai_client", mock_client):
         result = await synthesizer_node(state)
 
     return result, mock_client.chat.completions.create
@@ -74,7 +85,8 @@ async def test_renders_successful_tool_envelopes():
     state = _make_state(tool_results=tool_results)
     _, mock_create = await _run_with_stream_mock(state)
 
-    messages = mock_create.call_args.kwargs["messages"]
+    # call_args_list[0] = text synthesis call; [1] = chart extraction call
+    messages = mock_create.call_args_list[0].kwargs["messages"]
     user_content = next(m["content"] for m in messages if m["role"] == "user")
     assert "financial_data result:" in user_content
     assert "web_search result:" in user_content
@@ -93,11 +105,8 @@ async def test_renders_failure_lines():
 
 async def test_no_docs_guard_fires():
     """No chunks + no successful tools + document-specific query → canned message, no OpenAI call."""
-    with patch("app.agent.synthesizer.openai.AsyncOpenAI") as mock_cls:
-        mock_client = MagicMock()
+    with patch("app.agent.synthesizer.openai_client") as mock_client:
         mock_client.chat.completions.create = AsyncMock()
-        mock_cls.return_value = mock_client
-
         result = await synthesizer_node(_make_state(query="summarize the document"))
 
     assert "No documents uploaded yet" in result["final_output"]
@@ -120,7 +129,8 @@ async def test_tools_prompt_selected_when_no_chunks():
     state = _make_state(tool_results=tool_results, reranked_chunks=[])
     _, mock_create = await _run_with_stream_mock(state)
 
-    messages = mock_create.call_args.kwargs["messages"]
+    # call_args_list[0] = text synthesis call; [1] = chart extraction call
+    messages = mock_create.call_args_list[0].kwargs["messages"]
     system_content = next(m["content"] for m in messages if m["role"] == "system")
     assert system_content == _SYSTEM_PROMPT_TOOLS
 

@@ -11,7 +11,7 @@ import InputBar from "@/components/chat/InputBar"
 import DocumentIngestionBanner from "@/components/chat/DocumentIngestionBanner"
 import ConfirmationBanner from "@/components/chat/ConfirmationBanner"
 import DocumentPanel from "@/components/chat/DocumentPanel"
-import type { ConfirmationRequired, IngestProgress, Source, ToolCall } from "@/lib/types"
+import type { ChartData, ConfirmationRequired, IngestProgress, Source, ToolCall } from "@/lib/types"
 
 const BASE = process.env.NEXT_PUBLIC_API_URL
 
@@ -29,6 +29,7 @@ export default function ConversationPage({ params }: { params: { id: string } })
   const [streamError, setStreamError] = useState<string | null>(null)
   const [isPanelOpen, setIsPanelOpen] = useState(true)
   const [confirmationRequest, setConfirmationRequest] = useState<ConfirmationRequired | null>(null)
+  const [streamingChartData, setStreamingChartData] = useState<ChartData | null>(null)
 
   // Ref tracks accumulated content so onDone never has a stale closure
   const streamingContentRef = useRef("")
@@ -57,6 +58,7 @@ export default function ConversationPage({ params }: { params: { id: string } })
         setToolCall(null)
         setIngestProgress(null)
         setConfirmationRequest(null)
+        setStreamingChartData(null)
         bumpToTop(id)
         await load(id)
         await refresh()
@@ -71,6 +73,7 @@ export default function ConversationPage({ params }: { params: { id: string } })
       setToolCall(null)
       setIngestProgress(null)
       setConfirmationRequest(null)
+      setStreamingChartData(null)
       streamingContentRef.current = ""
       setStreamingContent("")
     }, []),
@@ -94,6 +97,10 @@ export default function ConversationPage({ params }: { params: { id: string } })
 
     onConfirmed: useCallback((_token: string, _answer: string) => {
       setConfirmationRequest(null)
+    }, []),
+
+    onChartData: useCallback((cd: ChartData) => {
+      setStreamingChartData(cd)
     }, []),
   })
 
@@ -139,6 +146,7 @@ export default function ConversationPage({ params }: { params: { id: string } })
       setToolCall(null)
       setStreamingSources([])
       setIngestProgress(null)
+      setStreamingChartData(null)
 
       await startStream(id, message, token, files.length ? files : undefined)
     },
@@ -174,6 +182,7 @@ export default function ConversationPage({ params }: { params: { id: string } })
           toolCall={toolCall}
           streamingSources={streamingSources}
           isStreaming={isStreaming}
+          streamingChartData={streamingChartData}
         />
         {toolCall?.tool_name === "document_finder" &&
           toolCall?.status === "ingesting" && (

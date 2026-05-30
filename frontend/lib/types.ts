@@ -29,6 +29,7 @@ export interface MessageRead {
   rag_used?: boolean
   relevance_score?: number | null
   retrieved_chunk_ids?: string[] | null
+  chart_data?: ChartData | null
 }
 
 export interface IngestProgress {
@@ -80,6 +81,24 @@ export interface ConfirmationRequired {
   description: string
 }
 
+export interface ChartDataPoint {
+  x: string | number
+  y: number
+}
+
+export interface ChartSeries {
+  name: string
+  data: ChartDataPoint[]
+}
+
+export interface ChartData {
+  chart_type: "line" | "bar" | "pie"
+  title: string
+  x_axis_label: string
+  y_axis_label: string
+  series: ChartSeries[]
+}
+
 export type SseEvent =
   | { event: "node_update"; data: { node: string; status: string } }
   | { event: "tool_call"; data: { tool: string; input: Record<string, unknown> } }
@@ -90,6 +109,7 @@ export type SseEvent =
   | { event: "ingest_complete"; data: { document_count: number } }
   | { event: "confirmation_required"; data: ConfirmationRequired }
   | { event: "confirmed"; data: { token: string; answer: string } }
+  | { event: "chart_data"; data: ChartData }
   | { event: "error"; data: { code?: string; message: string; failed_files?: string[]; pending_ids?: string[] } }
 
 export interface HoldingRead {

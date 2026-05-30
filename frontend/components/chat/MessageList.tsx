@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react"
 import MessageBubble from "./MessageBubble"
-import type { MessageRead, Source, ToolCall } from "@/lib/types"
+import type { ChartData, MessageRead, Source, ToolCall } from "@/lib/types"
 
 const STREAMING_ID = "__streaming__"
 
@@ -13,6 +13,7 @@ interface Props {
   toolCall: ToolCall | null
   streamingSources: Source[]
   isStreaming: boolean
+  streamingChartData?: ChartData | null
 }
 
 export default function MessageList({
@@ -22,6 +23,7 @@ export default function MessageList({
   toolCall,
   streamingSources,
   isStreaming,
+  streamingChartData,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const shouldAutoScrollRef = useRef(true)
@@ -73,6 +75,7 @@ export default function MessageList({
               toolCall={toolCall}
               sources={streamingSources}
               isStreaming={true}
+              streamingChartData={streamingChartData}
             />
           )}
         </div>
