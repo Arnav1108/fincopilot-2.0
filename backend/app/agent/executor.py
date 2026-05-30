@@ -12,6 +12,7 @@ from app.schemas.tools.company_comparator import CompanyComparatorInput
 from app.schemas.tools.document_finder import DocumentFinderInput
 from app.schemas.tools.document_retrieval import DocumentRetrievalInput
 from app.schemas.tools.financial_data import FinancialDataInput
+from app.schemas.tools.portfolio_analysis import PortfolioAnalysisInput
 from app.schemas.tools.web_search import WebSearchInput
 from app.tools import TOOL_REGISTRY, ToolError
 
@@ -22,6 +23,7 @@ _TOOL_INPUT_MODELS = {
     "document_finder": DocumentFinderInput,
     "document_retrieval": DocumentRetrievalInput,
     "financial_data": FinancialDataInput,
+    "portfolio_analysis": PortfolioAnalysisInput,
     "web_search": WebSearchInput,
 }
 
@@ -41,6 +43,8 @@ async def _run_step(i: int, step: dict, state: AgentState) -> tuple[str, dict, A
         if tool_name in ("document_retrieval", "document_finder"):
             raw_input["user_id"] = state["user_id"]
             raw_input["conversation_id"] = state["conversation_id"]
+        if tool_name == "portfolio_analysis":
+            raw_input["user_id"] = state["user_id"]
 
         if tool_name == "document_retrieval":
             if isinstance(raw_input.get("query"), str):

@@ -162,7 +162,7 @@ export default function MessageBubble({
                   h3: ({ children }) => (
                     <h3 className="mb-1 text-sm font-semibold">{children}</h3>
                   ),
-                  code: ({ inline, children, ...props }: any) =>
+                  code: ({ inline, children, ...props }: { inline?: boolean; children?: React.ReactNode; className?: string }) =>
                     inline ? (
                       <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs"
                         {...props}>{children}</code>

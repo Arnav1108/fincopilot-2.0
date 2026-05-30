@@ -1,8 +1,9 @@
 "use client"
 
 import { useState } from "react"
-import { useParams, useRouter } from "next/navigation"
-import { Plus, Settings } from "lucide-react"
+import { useParams, usePathname, useRouter } from "next/navigation"
+import { Briefcase, Plus, Settings } from "lucide-react"
+import { cn } from "@/lib/utils"
 import { useConversations } from "@/hooks/useConversations"
 import ConversationGroup from "./ConversationGroup"
 import SettingsModal from "@/components/settings/SettingsModal"
@@ -40,6 +41,7 @@ function groupByDate(conversations: ConversationRead[]): Record<string, Conversa
 export default function Sidebar() {
   const router = useRouter()
   const params = useParams()
+  const pathname = usePathname()
   const activeId = typeof params?.id === "string" ? params.id : undefined
   const { conversations, isLoading, create, rename, remove } = useConversations()
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -109,7 +111,20 @@ export default function Sidebar() {
         </div>
 
         {/* Footer */}
-        <div className="px-3 py-4">
+        <div className="px-3 py-4 flex flex-col gap-1">
+          <button
+            onClick={() => router.push("/portfolio")}
+            className={cn(
+              "flex items-center gap-2 w-full px-3 py-2 rounded-lg text-sm transition-colors",
+              pathname?.startsWith("/portfolio")
+                ? "bg-accent text-foreground"
+                : "text-muted-foreground hover:text-foreground hover:bg-accent",
+            )}
+            aria-label="Portfolio"
+          >
+            <Briefcase size={16} />
+            <span>Portfolio</span>
+          </button>
           <button
             onClick={() => setSettingsOpen(true)}
             className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"

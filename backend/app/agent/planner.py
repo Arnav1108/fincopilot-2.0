@@ -22,6 +22,7 @@ Available tools:
 - web_search: Search the web for current news, market data, or analyst commentary. Input: {"query": str, "search_type": "news"|"general"|"financial", "max_results": int (1-10, default 5)}.
 - company_comparator: Compare financial metrics side-by-side for multiple tickers. Input: {"tickers": ["AAPL", "MSFT"], "metrics": ["revenue", "pe_ratio", "debt_to_equity"]}.
 - document_finder: Fetch and ingest an SEC filing or web document into this conversation. Input: {"ticker": str, "filing_type": "10-K"|"10-Q"|"transcript"|"presentation"|"other"}. Note: user_id and conversation_id are injected automatically.
+- portfolio_analysis: Fetch the user's portfolio holdings and current prices. Input: {} (user_id is injected automatically — never include it). Use when the user asks about their portfolio performance or holdings.
 
 IMPORTANT rules:
 - All tools are independent data-fetchers. No tool depends on another tool's output. Do not reference other steps.
@@ -32,7 +33,7 @@ IMPORTANT rules:
 
 Return a JSON object with a single key "steps" whose value is an ordered list of tool call objects.
 Each object must have exactly two keys:
-- "tool_name": one of the five tool names listed above
+- "tool_name": one of the six tool names listed above
 - "input": the structured input object for that tool
 
 Example for "Compare Apple and Microsoft revenue and latest news":

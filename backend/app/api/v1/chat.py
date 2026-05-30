@@ -235,6 +235,8 @@ async def _stream_events(
         "error": None,
         "analyst_profile": {},
         "has_uploaded_documents": has_uploaded_documents,
+        "portfolio_data": None,
+        "chart_data": None,
     }
 
     run_id = uuid.uuid4()
@@ -289,6 +291,7 @@ async def _stream_events(
 
         # ── Phase 3: compute RAG metadata from final state ────────────────
         final_output: str = final_state.get("final_output") or ""
+        chart_data: dict | None = final_state.get("chart_data")
         retrieved_chunks: list[dict] = final_state.get("retrieved_chunks") or []
 
         rag_used: bool = bool(final_state.get("rag_used", False))
@@ -319,6 +322,7 @@ async def _stream_events(
                     rag_used=rag_used,
                     relevance_score=relevance_score,
                     retrieved_chunk_ids=retrieved_chunk_ids if retrieved_chunk_ids else None,
+                    chart_data=chart_data,
                 )
                 db.add(msg)
                 await db.execute(
@@ -422,6 +426,9 @@ async def _stream_events(
             relevance_score=relevance_score,
             retrieved_chunk_count=len(retrieved_chunks),
         )
+
+        if chart_data:
+            yield _sse("chart_data", chart_data)
 
         yield _sse("done", {
             "message_id": str(assistant_message_id),

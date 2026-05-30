@@ -91,3 +91,28 @@ export type SseEvent =
   | { event: "confirmation_required"; data: ConfirmationRequired }
   | { event: "confirmed"; data: { token: string; answer: string } }
   | { event: "error"; data: { code?: string; message: string; failed_files?: string[]; pending_ids?: string[] } }
+
+export interface HoldingRead {
+  id: string
+  portfolio_id: string
+  ticker: string
+  shares: string
+  avg_cost_basis: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface PortfolioRead {
+  id: string
+  user_id: string
+  name: string
+  created_at: string
+  updated_at: string
+  holdings: HoldingRead[]
+}
+
+export interface HoldingCreate {
+  ticker: string
+  shares: string
+  avg_cost_basis?: string | null
+}

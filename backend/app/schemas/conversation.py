@@ -44,3 +44,4 @@ class MessageRead(BaseModel):
     rag_used: bool = False
     relevance_score: Optional[float] = None
     retrieved_chunk_ids: Optional[list[str]] = None
+    chart_data: Optional[dict] = None

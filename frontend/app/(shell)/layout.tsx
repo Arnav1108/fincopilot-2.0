@@ -2,7 +2,7 @@ import { UserButton } from "@clerk/nextjs"
 import { ConversationsProvider } from "@/hooks/useConversations"
 import Sidebar from "@/components/sidebar/Sidebar"
 
-export default function ChatLayout({ children }: { children: React.ReactNode }) {
+export default function ShellLayout({ children }: { children: React.ReactNode }) {
   return (
     <ConversationsProvider>
       <div className="flex h-screen bg-background text-foreground overflow-hidden">

@@ -42,6 +42,15 @@ Category: simple
 Query: "[has_documents: true]\nWhat does this file say about revenue?"
 Category: simple
 
+Query: "How is my portfolio doing?"
+Category: simple
+
+Query: "Which of my holdings is performing best?"
+Category: simple
+
+Query: "What is my total portfolio value?"
+Category: simple
+
 Query: "Compare Apple, Microsoft, and Google profit margins over the last 3 years"
 Category: complex
 

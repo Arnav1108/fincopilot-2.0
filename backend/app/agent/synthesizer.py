@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 
 import structlog
 
@@ -56,6 +57,81 @@ _DOCUMENT_KEYWORDS = frozenset([
 def _is_document_specific(query: str) -> bool:
     q = query.lower()
     return any(kw in q for kw in _DOCUMENT_KEYWORDS)
+
+
+_CHART_EXTRACTION_PROMPT = """\
+You are a data extraction assistant for a financial research tool. Given JSON data returned by financial analysis tools, decide if the data can be visualised as a chart and extract it.
+
+If chartable, respond with ONLY this JSON:
+{
+  "chart_type": "line" | "bar" | "pie",
+  "title": "<descriptive chart title>",
+  "x_axis_label": "<x axis label>",
+  "y_axis_label": "<y axis label>",
+  "series": [{"name": "<series name>", "data": [{"x": "<label or number>", "y": <number>}]}]
+}
+
+If NOT chartable, respond with ONLY: {"chart_type": null}
+
+Rules:
+- "line": time-series ordered chronologically (price history, earnings by quarter over time)
+- "bar": categorical comparisons (quarterly revenue, multi-company metric comparison)
+- "pie": part-of-whole allocations (portfolio holdings by value, sector breakdown)
+- null: single scalars, text-only results, or data without a clear numeric series
+- Cap each series at 20 data points maximum
+- y values must always be numbers; do not fabricate data\
+"""
+
+_REQUIRED_CHART_FIELDS = {"chart_type", "title", "x_axis_label", "y_axis_label", "series"}
+
+
+async def _extract_chart_data(
+    successful: dict,
+    model: str,
+    logger: structlog.BoundLogger,
+) -> dict | None:
+    t0 = time.monotonic()
+    logger.debug("chart_extraction_started", model=model, tool_count=len(successful))
+    try:
+        tool_data_lines = [
+            f"{envelope['tool_name']}: {json.dumps(envelope['data'])}"
+            for envelope in successful.values()
+        ]
+        user_message = "Tool results:\n" + "\n".join(tool_data_lines)
+
+        response = await openai_client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": _CHART_EXTRACTION_PROMPT},
+                {"role": "user", "content": user_message},
+            ],
+            response_format={"type": "json_object"},
+            temperature=0.0,
+        )
+        raw = response.choices[0].message.content or "{}"
+        payload = json.loads(raw)
+
+        if payload.get("chart_type") is None:
+            logger.debug("chart_extraction_skipped", reason="chart_type_null")
+            return None
+
+        if not _REQUIRED_CHART_FIELDS.issubset(payload.keys()):
+            missing = _REQUIRED_CHART_FIELDS - payload.keys()
+            logger.warning("chart_extraction_failed", error=f"missing fields: {missing}")
+            return None
+
+        elapsed_ms = int((time.monotonic() - t0) * 1000)
+        logger.debug(
+            "chart_extraction_completed",
+            chart_type=payload["chart_type"],
+            series_count=len(payload.get("series", [])),
+            elapsed_ms=elapsed_ms,
+        )
+        return payload
+
+    except Exception as e:
+        logger.warning("chart_extraction_failed", error=str(e))
+        return None
 
 
 async def synthesizer_node(state: AgentState) -> dict:
@@ -143,15 +219,23 @@ async def synthesizer_node(state: AgentState) -> dict:
 
         final_output = "".join(tokens)
 
+        # Chart extraction: only for tool-result paths, never for RAG or LLM-only
+        chart_data: dict | None = None
+        if successful:
+            chart_data = await _extract_chart_data(successful, model, logger)
+        else:
+            logger.debug("chart_extraction_skipped", reason="no_tool_results")
+
         logger.debug(
             "synthesizer_completed",
             model=model,
             tool_result_count=len(tool_results),
             chunk_count=len(reranked_chunks),
             output_length=len(final_output),
+            chart_type=chart_data.get("chart_type") if chart_data else None,
         )
-        return {"final_output": final_output}
+        return {"final_output": final_output, "chart_data": chart_data}
 
     except Exception as e:
         logger.error("synthesizer_error", error=str(e))
-        return {"error": str(e)}
+        return {"error": str(e), "chart_data": None}

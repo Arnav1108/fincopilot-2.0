@@ -72,6 +72,8 @@ class AgentState(TypedDict):
     error: str | None
     model: str
     has_uploaded_documents: bool
+    portfolio_data: dict | None
+    chart_data: dict | None
 
 
 # ---------------------------------------------------------------------------

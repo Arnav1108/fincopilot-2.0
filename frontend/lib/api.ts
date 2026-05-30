@@ -1,4 +1,4 @@
-import type { ConversationDocumentsResponse, ConversationRead, DocumentRead, MessageRead, ProfileRead, ProfileUpdate } from "@/lib/types"
+import type { ConversationDocumentsResponse, ConversationRead, DocumentRead, HoldingCreate, HoldingRead, MessageRead, PortfolioRead, ProfileRead, ProfileUpdate } from "@/lib/types"
 
 const BASE = process.env.NEXT_PUBLIC_API_URL
 
@@ -75,4 +75,42 @@ export async function getConversationDocuments(token: string, conversationId: st
     token,
   )
   return response.documents
+}
+
+export function listPortfolios(token: string): Promise<PortfolioRead[]> {
+  return apiFetch("/portfolios/", token)
+}
+
+export function createPortfolio(token: string, name: string): Promise<PortfolioRead> {
+  return apiFetch("/portfolios/", token, {
+    method: "POST",
+    body: JSON.stringify({ name }),
+  })
+}
+
+export function deletePortfolio(token: string, portfolioId: string): Promise<void> {
+  return apiFetch<void>(`/portfolios/${portfolioId}`, token, { method: "DELETE" })
+}
+
+export function addHolding(
+  token: string,
+  portfolioId: string,
+  body: HoldingCreate,
+): Promise<HoldingRead> {
+  return apiFetch(`/portfolios/${portfolioId}/holdings`, token, {
+    method: "POST",
+    body: JSON.stringify(body),
+  })
+}
+
+export function deleteHolding(
+  token: string,
+  portfolioId: string,
+  holdingId: string,
+): Promise<void> {
+  return apiFetch<void>(
+    `/portfolios/${portfolioId}/holdings/${holdingId}`,
+    token,
+    { method: "DELETE" },
+  )
 }

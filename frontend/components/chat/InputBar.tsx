@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
+import { useCallback, useLayoutEffect, useRef, useState } from "react"
 import { ArrowUp, BarChart2, FileText, Loader2, Paperclip, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { IngestProgress } from "@/lib/types"

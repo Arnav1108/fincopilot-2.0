@@ -13,6 +13,7 @@ from app.schemas.tools.company_comparator import CompanyComparatorInput
 from app.schemas.tools.document_finder import DocumentFinderInput
 from app.schemas.tools.document_retrieval import DocumentRetrievalInput
 from app.schemas.tools.financial_data import FinancialDataInput
+from app.schemas.tools.portfolio_analysis import PortfolioAnalysisInput
 from app.schemas.tools.web_search import WebSearchInput
 from app.tools import TOOL_REGISTRY
 
@@ -21,6 +22,7 @@ _TOOL_INPUT_MODELS = {
     "document_finder": DocumentFinderInput,
     "document_retrieval": DocumentRetrievalInput,
     "financial_data": FinancialDataInput,
+    "portfolio_analysis": PortfolioAnalysisInput,
     "web_search": WebSearchInput,
 }
 
@@ -33,6 +35,7 @@ Available tools:
 - web_search: Search the web for current news, market data, or analyst commentary. Input: {"query": str, "search_type": "news"|"general"|"financial", "max_results": int (1-10, default 5)}.
 - company_comparator: Compare financial metrics side-by-side for multiple tickers. Input: {"tickers": ["AAPL", "MSFT"], "metrics": ["revenue", "pe_ratio"]}. Use when comparing metrics across 2+ companies (but only one category of metrics).
 - document_finder: Fetch and ingest an SEC filing or web document into this conversation. Input: {"ticker": str, "filing_type": "10-K"|"10-Q"|"transcript"|"presentation"|"other"}. Note: user_id and conversation_id are injected automatically.
+- portfolio_analysis: Fetch the user's portfolio holdings from the database and retrieve current prices via yfinance. Returns total portfolio value, per-holding breakdown (ticker, shares, current price, gain/loss), and top gainers/losers. Input: {} (user context is injected automatically — never pass user_id). Use when the user asks about their portfolio, holdings, portfolio performance, or which stocks they own.
 
 Rules:
 - Select exactly ONE tool, or null if no tool is needed.
@@ -43,14 +46,17 @@ Rules:
 - Do NOT include user_id or conversation_id in the input object — they are injected automatically.
 
 Return a JSON object with exactly these two keys:
-{"tool_name": <one of the five tool names, or null>, "input": <structured input object, or {} if null>}
+{"tool_name": <one of the six tool names, or null>, "input": <structured input object, or {} if null>}
 
 Examples:
 Query: "What is Apple's current stock price?" → {"tool_name": "financial_data", "input": {"ticker": "AAPL"}}
 Query: "Explain what a P/E ratio is" → {"tool_name": null, "input": {}}
 Query: "What happened to Tesla this week?" → {"tool_name": "web_search", "input": {"query": "Tesla stock news this week", "search_type": "news", "max_results": 5}}
 Query: "[has_documents: true]\\nWhat does the document say about risks?" → {"tool_name": "document_retrieval", "input": {"query": "risks"}}
-Query: "Get Apple's latest 10-K" → {"tool_name": "document_finder", "input": {"ticker": "AAPL", "filing_type": "10-K"}}\
+Query: "Get Apple's latest 10-K" → {"tool_name": "document_finder", "input": {"ticker": "AAPL", "filing_type": "10-K"}}
+Query: "How is my portfolio doing?" → {"tool_name": "portfolio_analysis", "input": {}}
+Query: "Which of my holdings is performing best?" → {"tool_name": "portfolio_analysis", "input": {}}
+Query: "What is my total portfolio value?" → {"tool_name": "portfolio_analysis", "input": {}}\
 """
 
 
@@ -95,6 +101,8 @@ async def tool_selector_node(state: AgentState) -> dict:
         if tool_name in ("document_retrieval", "document_finder"):
             tool_input["user_id"] = state["user_id"]
             tool_input["conversation_id"] = state["conversation_id"]
+        if tool_name == "portfolio_analysis":
+            tool_input["user_id"] = state["user_id"]
 
         try:
             validated = _TOOL_INPUT_MODELS[tool_name].model_validate(tool_input)
