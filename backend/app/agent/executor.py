@@ -87,14 +87,19 @@ async def executor_node(state: AgentState) -> dict:
             async def _run_step(step_id: str) -> tuple[str, Any]:
                 step = step_map[step_id]
                 emit_event({"type": "tool_call", "tool_name": step["tool_name"], "step_id": step_id, "status": "running"})
-                rendered = step["input_template"].format_map(
-                    {
-                        "query": state["query"],
-                        "user_id": state["user_id"],
-                        "conversation_id": state["conversation_id"],
-                        **{sid: str(tool_results.get(sid, "")) for sid in resolved},
-                    }
-                )
+                input_template = step["input_template"]
+                if isinstance(input_template, dict):
+                    # Directly substitute known placeholders in dict values
+                    rendered_dict = {}
+                    for k, v in input_template.items():
+                        if isinstance(v, str):
+                            rendered_dict[k] = v.replace("{query}", state["query"]).replace("{user_id}", state["user_id"]).replace("{conversation_id}", state["conversation_id"])
+                        else:
+                            rendered_dict[k] = v
+                    rendered = json.dumps(rendered_dict)
+                else:
+                    rendered = str(input_template).replace("{query}", state["query"]).replace("{user_id}", state["user_id"]).replace("{conversation_id}", state["conversation_id"])
+                logger.warning("executor_rendered_input", step_id=step_id, tool_name=step["tool_name"], rendered=rendered)
                 try:
                     tool_input: Any
                     try:
@@ -121,8 +126,8 @@ async def executor_node(state: AgentState) -> dict:
                         elif step["tool_name"] == "document_finder":
                             if set(tool_input.keys()) == {"input"}:
                                 tool_input = {"query": tool_input["input"]}
-                            tool_input.setdefault("user_id", state["user_id"])
-                            tool_input.setdefault("conversation_id", state["conversation_id"])
+                            tool_input["user_id"] = state["user_id"]
+                            tool_input["conversation_id"] = state["conversation_id"]
                         tool_input = input_cls.model_validate(tool_input)
                     result = await TOOL_REGISTRY[step["tool_name"]](tool_input)
                     emit_event({"type": "tool_call", "tool_name": step["tool_name"], "step_id": step_id, "status": "complete"})
@@ -147,13 +152,32 @@ async def executor_node(state: AgentState) -> dict:
 
             remaining = [sid for sid in remaining if sid not in resolved]
 
-        # Collect document_retrieval results into flat chunk list
-        all_chunks: list[ChunkDict] = []
+        # If document_finder returned a ready/duplicate result, run an immediate retrieval
         for sid in resolved:
             step = step_map.get(sid)
-            if step and step["tool_name"] == "document_retrieval":
-                raw = tool_results.get(sid)
-                all_chunks.extend(_normalize_chunks(raw))
+            if step and step["tool_name"] == "document_finder":
+                result = tool_results.get(sid)
+                if hasattr(result, "status") and result.status in ("ready", "duplicate"):
+                    try:
+                        retrieval_result = await TOOL_REGISTRY["document_retrieval"](
+                            DocumentRetrievalInput(
+                                query=state["query"][:_MAX_RETRIEVAL_QUERY_LEN],
+                                user_id=state["user_id"],
+                                conversation_id=state["conversation_id"],
+                            )
+                        )
+                        tool_results[f"{sid}_retrieval"] = retrieval_result
+                        emit_event({"type": "tool_call", "tool_name": "document_retrieval", "step_id": f"{sid}_retrieval", "status": "complete"})
+                    except Exception as e:
+                        logger.warning("document_finder_retrieval_failed", error=str(e))
+
+        # Collect document_retrieval results into flat chunk list
+        all_chunks: list[ChunkDict] = []
+        for sid, result in tool_results.items():
+            step = step_map.get(sid)
+            tool_name = step["tool_name"] if step else None
+            if tool_name == "document_retrieval" or sid.endswith("_retrieval"):
+                all_chunks.extend(_normalize_chunks(result))
 
         chunks = _dedup_chunks(all_chunks)
         reranked_chunks = chunks  # TODO: replace with real reranker in feature/agent-stream

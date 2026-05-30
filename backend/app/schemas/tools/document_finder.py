@@ -14,7 +14,7 @@ class DocumentFinderInput(BaseModel):
 
 
 class DocumentFinderOutput(BaseModel):
-    status: Literal["ready", "failed", "duplicate"]
+    status: Literal["ready", "failed", "duplicate", "cancelled"]
     chunk_count: int | None = None
     document_id: str | None = None
     message: str | None = None

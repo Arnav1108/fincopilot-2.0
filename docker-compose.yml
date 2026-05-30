@@ -8,6 +8,7 @@ services:
     env_file:
       - ./backend/.env
     volumes:
+      - ./backend:/app
       - uploads:/app/uploads
     depends_on:
       postgres:
@@ -22,6 +23,7 @@ services:
     env_file:
       - ./backend/.env
     volumes:
+      - ./backend:/app
       - uploads:/app/uploads
     depends_on:
       postgres:

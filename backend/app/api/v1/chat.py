@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import time
 import uuid
 from datetime import datetime, timezone
 from typing import AsyncGenerator
 
 import openai
+import redis.asyncio as aioredis
 import structlog
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import StreamingResponse
@@ -23,6 +25,7 @@ from app.database import AsyncSessionFactory
 from app.models.conversation import Conversation, Message, MessageRole
 from app.models.document import Document, DocumentStatus, DocumentType
 from app.models.user import User
+from app.services.title_generator import generate_title
 from app.tasks.ingestion import ingest_document
 
 router = APIRouter()
@@ -32,6 +35,12 @@ _ALLOWED_EXTENSIONS: frozenset[str] = frozenset({"pdf", "docx", "csv", "txt", "h
 _MAX_FILE_BYTES: int = 100 * 1024 * 1024   # 100 MB per file
 _INGEST_POLL_INTERVAL: float = 0.5          # seconds between DB polls
 _INGEST_TIMEOUT: float = 300.0              # seconds before giving up on ingestion
+_CONFIRM_PATTERN = re.compile(r"^CONFIRM:(yes|no):([0-9a-f-]{36})$")
+_CONFIRM_TTL = 120  # seconds — must match document_finder.py
+
+
+def _redis_client() -> aioredis.Redis:
+    return aioredis.from_url(settings.REDIS_URL, decode_responses=True)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -420,6 +429,54 @@ async def _stream_events(
             task.cancel()
 
 
+# ── HIL confirmation handler ─────────────────────────────────────────────────
+
+async def _handle_confirmation(
+    answer: str,
+    token: str,
+    conversation_id: uuid.UUID,
+) -> AsyncGenerator[str, None]:
+    """
+    Writes the user's yes/no answer to Redis so document_finder's polling loop
+    can pick it up. Returns a minimal SSE stream (confirmed + done).
+    """
+    redis_conn = _redis_client()
+    try:
+        await redis_conn.set(f"confirm:{token}", answer, ex=_CONFIRM_TTL)
+        logger.info(
+            "confirmation_response_stored",
+            token=token,
+            answer=answer,
+            conversation_id=str(conversation_id),
+        )
+    except Exception as exc:
+        logger.error("confirmation_redis_write_failed", token=token, error=str(exc))
+    finally:
+        await redis_conn.aclose()
+
+    yield _sse("confirmed", {"token": token, "answer": answer})
+    yield _sse("done", {"message_id": None, "conversation_id": str(conversation_id)})
+
+
+# ── Background title generation ───────────────────────────────────────────────
+
+async def _set_auto_title(conversation_id: uuid.UUID, message: str) -> None:
+    try:
+        title = await generate_title(message)
+        if not title:
+            return
+        async with AsyncSessionFactory() as db:
+            await db.execute(
+                update(Conversation)
+                .where(Conversation.id == conversation_id)
+                .values(title=title, updated_at=datetime.now(timezone.utc))
+            )
+            await db.commit()
+        logger.info("auto_title_set", conversation_id=str(conversation_id), title=title)
+    except Exception as exc:
+        logger.error("auto_title_failed", conversation_id=str(conversation_id), error=str(exc))
+
+
 # ── Endpoint ──────────────────────────────────────────────────────────────────
 
 @router.post("/{conversation_id}/stream")
@@ -451,7 +508,26 @@ async def stream_chat(
             detail="message must not be blank",
         )
 
+    # HIL: confirmation reply — write to Redis and return immediately, no DB write.
+    confirm_match = _CONFIRM_PATTERN.match(message.strip())
+    if confirm_match:
+        answer, token = confirm_match.group(1), confirm_match.group(2)
+        # Verify the token is a known pending confirmation before accepting.
+        redis_conn = _redis_client()
+        try:
+            pending = await redis_conn.exists(f"confirm:{token}:pending")
+        finally:
+            await redis_conn.aclose()
+        if not pending:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Unknown or expired confirmation token")
+        return StreamingResponse(
+            _handle_confirmation(answer, token, conversation_id),
+            media_type="text/event-stream; charset=utf-8",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
     # 1. Validate conversation ownership and persist the user message.
+    is_first_user_message = False
     async with AsyncSessionFactory() as db:
         result = await db.execute(
             select(Conversation).where(
@@ -486,6 +562,16 @@ async def stream_chat(
             user_id=str(user.id),
         )
 
+        user_count_result = await db.execute(
+            select(func.count())
+            .select_from(Message)
+            .where(
+                Message.conversation_id == conversation_id,
+                Message.role == MessageRole.user,
+            )
+        )
+        is_first_user_message = user_count_result.scalar_one() == 1
+
         memory = await MemoryManager().load_memory(db, str(user.id), str(conversation_id))
 
         doc_count_result = await db.execute(
@@ -495,6 +581,9 @@ async def stream_chat(
             )
         )
         has_uploaded_documents = (doc_count_result.scalar() or 0) > 0
+
+    if is_first_user_message:
+        asyncio.create_task(_set_auto_title(conversation_id, message))
 
     # 2. Validate + queue uploaded files.  Raises 422 immediately on bad input
     #    so the client gets a normal HTTP error before any SSE frames are sent.

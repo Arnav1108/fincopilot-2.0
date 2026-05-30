@@ -46,7 +46,7 @@ class Document(Base):
     filename: Mapped[str] = mapped_column(sa.Text, nullable=False)
     source_url: Mapped[Optional[str]] = mapped_column(sa.Text, nullable=True)
     doc_type: Mapped[DocumentType] = mapped_column(
-        sa.Enum(DocumentType, name="document_type", create_type=False),
+        sa.Enum(DocumentType, name="document_type", create_type=False, values_callable=lambda x: [e.value for e in x]),
         nullable=False,
     )
     ticker: Mapped[Optional[str]] = mapped_column(sa.Text, nullable=True)

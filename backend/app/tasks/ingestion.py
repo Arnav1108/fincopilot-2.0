@@ -267,13 +267,20 @@ def ingest_document(
         chunk_dicts = _build_chunks(full_text, pages)
         log.info("chunking_complete", chunk_count=len(chunk_dicts))
 
-        # 5. Embed all chunks in a single API call
+        # 5. Embed chunks in batches of 500 to stay within OpenAI token limits
+        BATCH_SIZE = 200
+        all_embeddings = []
         client = openai.OpenAI(api_key=settings.OPENAI_API_KEY)
         try:
-            response = client.embeddings.create(
-                model="text-embedding-3-small",
-                input=[c["content"] for c in chunk_dicts],
-            )
+            for i in range(0, len(chunk_dicts), BATCH_SIZE):
+                batch = chunk_dicts[i:i + BATCH_SIZE]
+                response = client.embeddings.create(
+                    model="text-embedding-3-small",
+                    input=[c["content"] for c in batch],
+                )
+                all_embeddings.extend([e.embedding for e in response.data])
+                if i + BATCH_SIZE < len(chunk_dicts):
+                    time.sleep(1)
         except (openai.APIError, openai.RateLimitError) as exc:
             db.rollback()
             if self.request.retries >= self.max_retries:
@@ -285,11 +292,7 @@ def ingest_document(
                 _publish_status(document_id, "failed", error_message=str(exc))
                 log.error("task_failed", error=str(exc))
                 return
-            log.warning(
-                "task_failed_retrying",
-                error=str(exc),
-                retry_number=self.request.retries,
-            )
+            log.warning("task_failed_retrying", error=str(exc), retry_number=self.request.retries)
             raise self.retry(exc=exc, countdown=30 * (2 ** self.request.retries))
 
         log.info("embedding_complete")
@@ -303,7 +306,7 @@ def ingest_document(
                 conversation_id=conv_uuid,
                 chunk_index=c["chunk_index"],
                 content=c["content"],
-                embedding=response.data[i].embedding,
+                embedding=all_embeddings[i],
                 chunk_metadata={
                     "page_numbers": c["page_numbers"],
                     "chunk_index": c["chunk_index"],
@@ -351,5 +354,6 @@ def ingest_document(
 
     finally:
         db.close()
-        if os.path.exists(file_path):
+        # Only delete the temp file if we're not going to retry
+        if os.path.exists(file_path) and self.request.retries >= self.max_retries:
             os.remove(file_path)

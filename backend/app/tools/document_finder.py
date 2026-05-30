@@ -23,6 +23,8 @@ logger = structlog.get_logger(__name__)
 _SEC_FILING_TYPES: frozenset[str] = frozenset({"10-K", "10-Q"})
 _POLL_TIMEOUT = 600.0
 _HTTP_TIMEOUT = 30.0
+_CONFIRM_TTL = 120          # seconds the user has to respond
+_CONFIRM_POLL_INTERVAL = 0.5
 _CIK_CACHE: dict[str, str] = {}
 _TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
 _SUBMISSIONS_URL = "https://data.sec.gov/submissions/CIK{cik}.json"
@@ -66,6 +68,63 @@ async def _get_cik(ticker: str, client: httpx.AsyncClient) -> str:
 
 class DocumentFinderTool(BaseTool[DocumentFinderInput, DocumentFinderOutput]):
 
+    # ── Human-in-the-loop confirmation ────────────────────────────────────────
+
+    async def _request_confirmation(
+        self,
+        ticker: str,
+        filing_type: str,
+        period: str,
+        conversation_id: str,
+    ) -> bool:
+        """
+        Emits a confirmation_required SSE event, then polls Redis for a yes/no
+        response written by the chat endpoint when the user replies.
+        Returns True to proceed, False to cancel (including timeout).
+        """
+        token = str(uuid.uuid4())
+        redis_key = f"confirm:{token}"
+
+        from app.agent.stream_context import emit_event  # lazy: avoids circular import at module load
+        emit_event({
+            "type": "confirmation_required",
+            "token": token,
+            "ticker": ticker,
+            "filing_type": filing_type,
+            "period": period,
+            "description": f"{ticker} {filing_type} {period}".strip(),
+        })
+        logger.info(
+            "confirmation_required_emitted",
+            ticker=ticker,
+            filing_type=filing_type,
+            period=period,
+            token=token,
+        )
+
+        redis_conn = _redis_client()
+        try:
+            # sentinel so the chat endpoint knows this token is valid
+            await redis_conn.set(f"{redis_key}:pending", "1", ex=_CONFIRM_TTL)
+
+            loop = asyncio.get_running_loop()
+            deadline = loop.time() + _CONFIRM_TTL
+
+            while loop.time() < deadline:
+                response = await redis_conn.get(redis_key)
+                if response == "yes":
+                    logger.info("confirmation_accepted", token=token)
+                    return True
+                if response == "no":
+                    logger.info("confirmation_rejected", token=token)
+                    return False
+                await asyncio.sleep(_CONFIRM_POLL_INTERVAL)
+
+            logger.warning("confirmation_timeout", token=token)
+            return False
+        finally:
+            await redis_conn.aclose()
+
     async def __call__(self, input: DocumentFinderInput) -> DocumentFinderOutput:  # noqa: A002
         logger.debug("tool_called", tool_name="document_finder", ticker=input.ticker, filing_type=input.filing_type)
 
@@ -100,6 +159,7 @@ class DocumentFinderTool(BaseTool[DocumentFinderInput, DocumentFinderOutput]):
     async def _sec_route(self, input: DocumentFinderInput, ticker: str) -> DocumentFinderOutput:
         headers = {"User-Agent": _user_agent(), "Accept-Encoding": "gzip, deflate"}
 
+        # Phase 1: resolve filing metadata (no download yet)
         async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT, headers=headers) as client:
             cik = await _get_cik(ticker, client)
 
@@ -110,6 +170,7 @@ class DocumentFinderTool(BaseTool[DocumentFinderInput, DocumentFinderOutput]):
             filings = subs.get("filings", {}).get("recent", {})
             forms = filings.get("form", [])
             accessions = filings.get("accessionNumber", [])
+            report_dates = filings.get("reportDate", [])
 
             idx = next((i for i, f in enumerate(forms) if f == input.filing_type), None)
             if idx is None:
@@ -121,7 +182,17 @@ class DocumentFinderTool(BaseTool[DocumentFinderInput, DocumentFinderOutput]):
             filing_url = (
                 f"https://www.sec.gov/Archives/edgar/data/{cik_int}/{acc_clean}/{raw_acc}.txt"
             )
+            period = report_dates[idx] if idx < len(report_dates) else ""
 
+        # Phase 2: ask the user before downloading the filing
+        confirmed = await self._request_confirmation(
+            ticker, input.filing_type, period, input.conversation_id
+        )
+        if not confirmed:
+            return DocumentFinderOutput(status="cancelled", message="Download cancelled by user.")
+
+        # Phase 3: download the filing
+        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT, headers=headers) as client:
             filing_resp = await client.get(filing_url)
             filing_resp.raise_for_status()
             raw_text = filing_resp.text
@@ -171,6 +242,13 @@ class DocumentFinderTool(BaseTool[DocumentFinderInput, DocumentFinderOutput]):
         )
         source_url: str = pdf_result.get("url", "")
         file_type = "pdf" if source_url.lower().endswith(".pdf") else "html"
+
+        # Ask the user before downloading
+        confirmed = await self._request_confirmation(
+            ticker, input.filing_type, "", input.conversation_id
+        )
+        if not confirmed:
+            return DocumentFinderOutput(status="cancelled", message="Download cancelled by user.")
 
         async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as http:
             resp = await http.get(source_url)

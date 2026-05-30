@@ -10,8 +10,10 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 from app.api.auth import clerk_auth
 from app.database import get_db
 from app.models.conversation import Conversation, Message
+from app.models.document import Document
 from app.models.user import User
 from app.schemas.conversation import ConversationRead, ConversationUpdate, MessageRead
+from app.schemas.document import DocumentListResponse, DocumentRead
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)
@@ -117,3 +119,36 @@ async def list_messages(
         .order_by(Message.created_at.asc())
     )
     return [MessageRead.model_validate(m) for m in msg_result.scalars().all()]
+
+
+@router.get("/{conversation_id}/documents", response_model=DocumentListResponse)
+async def list_conversation_documents(
+    conversation_id: uuid.UUID,
+    user: User = Depends(clerk_auth),
+    db: AsyncSession = Depends(get_db),
+):
+    conv_result = await db.execute(
+        select(Conversation).where(
+            Conversation.id == conversation_id,
+            Conversation.user_id == user.id,
+            Conversation.deleted_at.is_(None),
+        )
+    )
+    if conv_result.scalar_one_or_none() is None:
+        logger.warning("conversation_not_found", conversation_id=str(conversation_id), user_id=str(user.id))
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+
+    stmt = (
+        select(Document)
+        .where(Document.conversation_id == conversation_id, Document.user_id == user.id)
+        .order_by(Document.created_at.asc())
+    )
+    result = await db.execute(stmt)
+    docs = result.scalars().all()
+    logger.info(
+        "conversation_documents_fetched",
+        conversation_id=str(conversation_id),
+        user_id=str(user.id),
+        count=len(docs),
+    )
+    return DocumentListResponse(documents=[DocumentRead.model_validate(d) for d in docs])
