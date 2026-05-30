@@ -16,7 +16,7 @@ You are a financial research assistant. Synthesise information from the retrieve
 Rules:
 1. Base your answer ONLY on the document chunks provided. Do not use outside knowledge.
 2. Do NOT provide buy, sell, or hold recommendations. If asked, state clearly that your output does not constitute financial advice and describe only what the documents say.
-3. Cite sources inline using [1], [2], etc., mapped to the chunk numbers provided.
+3. Each chunk is labeled [N] (filename). Cite by document name inline, e.g. "According to Apple_2024_10K.pdf, …". Use [N] references only when the filename alone is ambiguous.
 4. Tailor your response to the analyst's profile: acknowledge their role and focus areas when relevant.
 5. If the documents do not contain enough information to answer the query, say so explicitly.\
 """
@@ -195,7 +195,9 @@ async def synthesizer_node(state: AgentState) -> dict:
         if reranked_chunks:
             chunk_lines: list[str] = []
             for i, chunk in enumerate(reranked_chunks[:10], start=1):
-                chunk_lines.append(f"[{i}] {chunk['content']}")
+                filename = (chunk.get("metadata") or {}).get("document_filename")
+                prefix = f"[{i}] ({filename})" if filename else f"[{i}]"
+                chunk_lines.append(f"{prefix} {chunk['content']}")
             parts.append("Document chunks:\n" + "\n\n".join(chunk_lines))
 
         user_message = "\n\n".join(parts)

@@ -31,7 +31,7 @@ def _mock_openai(content: str):
     mock_client = MagicMock()
     mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
 
-    patcher = patch("app.agent.tool_selector.openai.AsyncOpenAI", return_value=mock_client)
+    patcher = patch("app.agent.tool_selector.openai_client", new=mock_client)
     return patcher, mock_client
 
 
@@ -97,10 +97,8 @@ async def test_validation_error_returns_empty_plan():
 
 async def test_non_simple_classification_returns_empty_plan():
     """tool_selector must short-circuit without calling OpenAI for non-simple."""
-    with patch("app.agent.tool_selector.openai.AsyncOpenAI") as mock_cls:
-        mock_client = MagicMock()
+    with patch("app.agent.tool_selector.openai_client") as mock_client:
         mock_client.chat.completions.create = AsyncMock()
-        mock_cls.return_value = mock_client
 
         result = await tool_selector_node(_make_state(classification="complex"))
 
@@ -109,10 +107,8 @@ async def test_non_simple_classification_returns_empty_plan():
 
 
 async def test_openai_exception_returns_error():
-    with patch("app.agent.tool_selector.openai.AsyncOpenAI") as mock_cls:
-        mock_client = MagicMock()
+    with patch("app.agent.tool_selector.openai_client") as mock_client:
         mock_client.chat.completions.create = AsyncMock(side_effect=Exception("api error"))
-        mock_cls.return_value = mock_client
 
         result = await tool_selector_node(_make_state())
 

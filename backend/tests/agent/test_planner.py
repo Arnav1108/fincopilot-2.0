@@ -27,7 +27,7 @@ def _mock_openai(content: str):
     mock_client = MagicMock()
     mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
 
-    patcher = patch("app.agent.planner.openai.AsyncOpenAI", return_value=mock_client)
+    patcher = patch("app.agent.planner.openai_client", new=mock_client)
     return patcher, mock_client
 
 
@@ -109,10 +109,8 @@ async def test_parse_failure_returns_empty_plan():
 
 async def test_non_complex_returns_empty_plan():
     """Non-complex classification must short-circuit without calling OpenAI."""
-    with patch("app.agent.planner.openai.AsyncOpenAI") as mock_cls:
-        mock_client = MagicMock()
+    with patch("app.agent.planner.openai_client") as mock_client:
         mock_client.chat.completions.create = AsyncMock()
-        mock_cls.return_value = mock_client
 
         result = await planner_node(_make_state(classification="simple"))
 

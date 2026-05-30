@@ -28,7 +28,7 @@ def _mock_openai_client(content: str, module: str):
     mock_client = MagicMock()
     mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
 
-    patcher = patch(module, return_value=mock_client)
+    patcher = patch(module, new=mock_client)
     return patcher, mock_client
 
 
@@ -37,28 +37,28 @@ def _mock_openai_client(content: str, module: str):
 # ---------------------------------------------------------------------------
 
 async def test_router_simple():
-    patcher, _ = _mock_openai_client("simple", "app.agent.router.openai.AsyncOpenAI")
+    patcher, _ = _mock_openai_client("simple", "app.agent.router.openai_client")
     with patcher:
         result = await router_node(_make_router_state())
     assert result["classification"] == "simple"
 
 
 async def test_router_complex():
-    patcher, _ = _mock_openai_client("complex", "app.agent.router.openai.AsyncOpenAI")
+    patcher, _ = _mock_openai_client("complex", "app.agent.router.openai_client")
     with patcher:
         result = await router_node(_make_router_state())
     assert result["classification"] == "complex"
 
 
 async def test_router_ingest():
-    patcher, _ = _mock_openai_client("ingest", "app.agent.router.openai.AsyncOpenAI")
+    patcher, _ = _mock_openai_client("ingest", "app.agent.router.openai_client")
     with patcher:
         result = await router_node(_make_router_state())
     assert result["classification"] == "ingest"
 
 
 async def test_router_unknown_falls_back_to_complex():
-    patcher, _ = _mock_openai_client("gibberish", "app.agent.router.openai.AsyncOpenAI")
+    patcher, _ = _mock_openai_client("gibberish", "app.agent.router.openai_client")
     with patcher:
         result = await router_node(_make_router_state())
     assert result["classification"] == "complex"
@@ -66,9 +66,7 @@ async def test_router_unknown_falls_back_to_complex():
 
 
 async def test_router_openai_error():
-    with patch("app.agent.router.openai.AsyncOpenAI") as MockOpenAI:
-        mock_client = MagicMock()
+    with patch("app.agent.router.openai_client") as mock_client:
         mock_client.chat.completions.create = AsyncMock(side_effect=Exception("api error"))
-        MockOpenAI.return_value = mock_client
         result = await router_node(_make_router_state())
     assert "error" in result

@@ -42,6 +42,8 @@ class ChunkResult(BaseModel):
     similarity_score: float
     content: str
     metadata: dict | None
+    document_filename: str | None = None
+    document_type: str | None = None
 
 
 class RetrieveDebugResponse(BaseModel):

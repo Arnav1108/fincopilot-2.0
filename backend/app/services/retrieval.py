@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import uuid
 
 import openai
@@ -9,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.models.document import DocumentChunk
+from app.models.document import Document, DocumentChunk
 from app.schemas.document import ChunkResult
 
 logger = structlog.get_logger(__name__)
@@ -74,7 +75,8 @@ class RetrievalService:
         distance_expr = DocumentChunk.embedding.cosine_distance(query_vec).label("distance")
 
         stmt = (
-            select(DocumentChunk, distance_expr)
+            select(DocumentChunk, Document, distance_expr)
+            .outerjoin(Document, DocumentChunk.document_id == Document.id)
             .where(
                 DocumentChunk.user_id == user_id,
                 DocumentChunk.conversation_id == conversation_id,
@@ -103,8 +105,10 @@ class RetrievalService:
                 similarity_score=float(1.0 - distance),
                 content=chunk.content,
                 metadata=chunk.chunk_metadata,
+                document_filename=os.path.basename(doc.filename) if doc else None,
+                document_type=doc.doc_type.value if doc else None,
             )
-            for chunk, distance in rows
+            for chunk, doc, distance in rows
         ]
 
         results = await self._rerank(candidates, query, top_k)
@@ -116,6 +120,15 @@ class RetrievalService:
             results_count=len(results),
             top_score=results[0].similarity_score if results else 0.0,
         )
+
+        filenames = {c.document_filename for c in results if c.document_filename}
+        if filenames:
+            logger.debug(
+                "retrieval_enriched",
+                distinct_filename_count=len(filenames),
+                results_count=len(results),
+            )
+
         return results
 
     async def _rerank(

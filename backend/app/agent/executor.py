@@ -189,7 +189,13 @@ def _normalize_chunks(raw: Any) -> list[ChunkDict]:
         return [
             ChunkDict(
                 content=chunk.content,
-                metadata={**(chunk.metadata or {}), "chunk_id": str(chunk.chunk_id), "document_id": str(chunk.document_id)},
+                metadata={
+                    **(chunk.metadata or {}),
+                    "chunk_id": str(chunk.chunk_id),
+                    "document_id": str(chunk.document_id),
+                    "document_filename": chunk.document_filename,
+                    "document_type": chunk.document_type,
+                },
                 score=chunk.similarity_score,
             )
             for chunk in raw.chunks

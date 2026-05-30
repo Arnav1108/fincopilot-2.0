@@ -152,3 +152,56 @@ async def test_score_orthogonal_vectors(db: AsyncSession, test_user: User):
 
     assert len(results) == 1
     assert abs(results[0].similarity_score) < 1e-5
+
+
+async def test_chunk_result_includes_document_filename(db: AsyncSession, test_user: User):
+    """Every ChunkResult must carry document_filename from the parent Document row."""
+    conv = await make_conversation(db, test_user.id)
+    doc = await make_document(db, test_user.id, conv.id)
+    emb = [0.0] * 1535 + [1.0]
+    await make_chunk(db, doc.id, test_user.id, conv.id, "AI investment content", emb, chunk_index=0)
+
+    query_emb = [0.0] * 1535 + [1.0]
+    with patch("app.services.retrieval.openai.AsyncOpenAI", return_value=_mock_openai(query_emb)):
+        results = await retrieval_service.retrieve(db, test_user.id, conv.id, "AI", top_k=1)
+
+    assert len(results) == 1
+    assert results[0].document_filename == "test.pdf"
+    assert results[0].document_type == DocumentType.other.value
+
+
+async def test_chunk_result_multi_document_filenames(db: AsyncSession, test_user: User):
+    """Chunks from two different documents must each carry their own filename."""
+    conv = await make_conversation(db, test_user.id)
+
+    doc_a = Document(
+        user_id=test_user.id,
+        conversation_id=conv.id,
+        filename="Apple_2024_10K.pdf",
+        doc_type=DocumentType.filing_10k,
+        status=DocumentStatus.ready,
+    )
+    doc_b = Document(
+        user_id=test_user.id,
+        conversation_id=conv.id,
+        filename="Apple_Q3_2024_earnings.pdf",
+        doc_type=DocumentType.transcript,
+        status=DocumentStatus.ready,
+    )
+    db.add(doc_a)
+    db.add(doc_b)
+    await db.commit()
+    await db.refresh(doc_a)
+    await db.refresh(doc_b)
+
+    emb = [0.0] * 1535 + [1.0]
+    await make_chunk(db, doc_a.id, test_user.id, conv.id, "10-K AI content", emb, chunk_index=0)
+    await make_chunk(db, doc_b.id, test_user.id, conv.id, "earnings AI content", emb, chunk_index=0)
+
+    query_emb = [0.0] * 1535 + [1.0]
+    with patch("app.services.retrieval.openai.AsyncOpenAI", return_value=_mock_openai(query_emb)):
+        results = await retrieval_service.retrieve(db, test_user.id, conv.id, "AI", top_k=5)
+
+    filenames = {r.document_filename for r in results}
+    assert "Apple_2024_10K.pdf" in filenames
+    assert "Apple_Q3_2024_earnings.pdf" in filenames
