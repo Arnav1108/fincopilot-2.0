@@ -157,23 +157,23 @@ async def test_citations_present_in_rag_mode():
 
 
 def _chunk_with_filename(text: str, filename: str) -> dict:
-    return {"content": text, "metadata": {"document_filename": filename}, "score": 0.9}
+    return {"content": text, "metadata": {"doc_filename": filename}, "score": 0.9}
 
 
 async def test_chunk_rendering_includes_filename():
-    """When document_filename is in metadata, it must appear in the rendered chunk prefix."""
+    """doc_filename in metadata must appear as [Source: ...] in the rendered chunk prefix."""
     chunk = _chunk_with_filename("AI investment detail", "Apple_2024_10K.pdf")
     state = _make_state(reranked_chunks=[chunk])
     _, mock_create = await _run_with_stream_mock(state)
 
     messages = mock_create.call_args.kwargs["messages"]
     user_content = next(m["content"] for m in messages if m["role"] == "user")
-    assert "(Apple_2024_10K.pdf)" in user_content
+    assert "[Source: Apple_2024_10K.pdf]" in user_content
     assert "AI investment detail" in user_content
 
 
-async def test_chunk_rendering_without_filename_is_plain():
-    """When document_filename is absent, prefix must be plain [N] with no '(None)'."""
+async def test_chunk_rendering_without_filename_falls_back_to_unknown():
+    """When doc_filename is absent and no document_id, label falls back to 'unknown'."""
     state = _make_state(reranked_chunks=[_chunk("Plain content")])
     _, mock_create = await _run_with_stream_mock(state)
 
@@ -182,10 +182,11 @@ async def test_chunk_rendering_without_filename_is_plain():
     assert "[1]" in user_content
     assert "Plain content" in user_content
     assert "(None)" not in user_content
+    assert "[Source:" in user_content
 
 
 async def test_multi_document_chunks_show_distinct_filenames():
-    """Two chunks from different documents must both appear with their respective filenames."""
+    """Two chunks from different documents must both appear with their respective source labels."""
     chunks = [
         _chunk_with_filename("10-K content", "Apple_2024_10K.pdf"),
         _chunk_with_filename("Earnings content", "Apple_Q3_2024_earnings.pdf"),
@@ -195,5 +196,5 @@ async def test_multi_document_chunks_show_distinct_filenames():
 
     messages = mock_create.call_args.kwargs["messages"]
     user_content = next(m["content"] for m in messages if m["role"] == "user")
-    assert "(Apple_2024_10K.pdf)" in user_content
-    assert "(Apple_Q3_2024_earnings.pdf)" in user_content
+    assert "[Source: Apple_2024_10K.pdf]" in user_content
+    assert "[Source: Apple_Q3_2024_earnings.pdf]" in user_content

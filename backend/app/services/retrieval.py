@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import os
 import uuid
 
 import openai
@@ -46,6 +45,7 @@ class RetrievalService:
         conversation_id: uuid.UUID,
         query: str,
         top_k: int = 5,
+        doc_ids: list[uuid.UUID] | None = None,
     ) -> list[ChunkResult]:
         """Return the top-k chunks for *query* scoped to a single conversation.
 
@@ -53,6 +53,9 @@ class RetrievalService:
         When the cross-encoder is available, fetches top_k * 3 candidates from pgvector
         then re-scores with the cross-encoder before trimming to top_k.
         Falls back to cosine-ranked order if the cross-encoder fails.
+
+        When doc_ids is provided, restricts retrieval to chunks from those documents only.
+        The Document table is always joined to populate attribution metadata on each chunk.
         """
         logger.debug(
             "retrieval_called",
@@ -60,6 +63,7 @@ class RetrievalService:
             conversation_id=str(conversation_id),
             query_length=len(query),
             top_k=top_k,
+            doc_ids_filter_count=len(doc_ids) if doc_ids else 0,
         )
 
         client = openai.AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
@@ -74,14 +78,18 @@ class RetrievalService:
 
         distance_expr = DocumentChunk.embedding.cosine_distance(query_vec).label("distance")
 
+        conditions = [
+            DocumentChunk.user_id == user_id,
+            DocumentChunk.conversation_id == conversation_id,
+            DocumentChunk.embedding.is_not(None),
+        ]
+        if doc_ids:
+            conditions.append(DocumentChunk.document_id.in_(doc_ids))
+
         stmt = (
             select(DocumentChunk, Document, distance_expr)
-            .outerjoin(Document, DocumentChunk.document_id == Document.id)
-            .where(
-                DocumentChunk.user_id == user_id,
-                DocumentChunk.conversation_id == conversation_id,
-                DocumentChunk.embedding.is_not(None),
-            )
+            .join(Document, DocumentChunk.document_id == Document.id)
+            .where(*conditions)
             .order_by(distance_expr)
             .limit(candidate_k)
         )
@@ -104,9 +112,15 @@ class RetrievalService:
                 document_id=chunk.document_id,
                 similarity_score=float(1.0 - distance),
                 content=chunk.content,
-                metadata=chunk.chunk_metadata,
-                document_filename=os.path.basename(doc.filename) if doc else None,
-                document_type=doc.doc_type.value if doc else None,
+                metadata={
+                    **(chunk.chunk_metadata or {}),
+                    "doc_filename": doc.filename,
+                    "doc_ticker": doc.ticker,
+                    "doc_type": doc.doc_type.value if doc.doc_type else None,
+                    "doc_filing_date": doc.filing_date.isoformat() if doc.filing_date else None,
+                },
+                document_filename=doc.filename,
+                document_type=doc.doc_type.value if doc.doc_type else None,
             )
             for chunk, doc, distance in rows
         ]
@@ -120,15 +134,6 @@ class RetrievalService:
             results_count=len(results),
             top_score=results[0].similarity_score if results else 0.0,
         )
-
-        filenames = {c.document_filename for c in results if c.document_filename}
-        if filenames:
-            logger.debug(
-                "retrieval_enriched",
-                distinct_filename_count=len(filenames),
-                results_count=len(results),
-            )
-
         return results
 
     async def _rerank(

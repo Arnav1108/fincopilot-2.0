@@ -15,6 +15,7 @@ class DocumentRetrievalInput(BaseModel):
     ticker: str | None = None
     doc_type: str | None = None
     fiscal_year: int | None = None
+    doc_ids: list[uuid.UUID] | None = Field(default=None, max_length=10)
 
 
 class DocumentRetrievalOutput(BaseModel):

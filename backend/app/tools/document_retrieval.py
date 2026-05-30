@@ -28,6 +28,7 @@ class DocumentRetrievalTool(BaseTool[DocumentRetrievalInput, DocumentRetrievalOu
                 conversation_id=input.conversation_id,
                 query=input.query,
                 top_k=fetch_k,
+                doc_ids=input.doc_ids or None,
             )
 
         if has_filters:

@@ -17,7 +17,7 @@ _SYSTEM_PROMPT = """\
 You are a research planner for a financial analysis assistant. Decompose the user's query into an ordered list of independent tool calls.
 
 Available tools:
-- document_retrieval: Search the user's ingested documents using semantic search. Input: {"query": str}. Provide a focused search phrase (50-200 chars), not full instructions or file names.
+- document_retrieval: Search the user's ingested documents using semantic search. Input: {"query": str, "doc_ids": ["<uuid>"] (optional)}. Provide a focused search phrase (50-200 chars), not full instructions or file names. When comparing two specific documents, issue one step per document, each with "doc_ids": ["<that-document-uuid>"] to target it directly.
 - financial_data: Fetch live stock price, income statement, balance sheet, and cash flow for a single ticker. Input: {"ticker": str} (uppercase, e.g. "AAPL").
 - web_search: Search the web for current news, market data, or analyst commentary. Input: {"query": str, "search_type": "news"|"general"|"financial", "max_results": int (1-10, default 5)}.
 - company_comparator: Compare financial metrics side-by-side for multiple tickers. Input: {"tickers": ["AAPL", "MSFT"], "metrics": ["revenue", "pe_ratio", "debt_to_equity"]}.
@@ -30,6 +30,8 @@ IMPORTANT rules:
 - Do NOT include financial_calculator — it does not exist.
 - Do NOT use id, dependencies, or input_template fields — they do not exist in this format.
 - When [has_documents: true] is in the context, include document_retrieval as the FIRST step in the plan.
+- Do NOT include user_id or conversation_id in any input — they are injected automatically.
+- When [available_documents: ...] lists multiple documents and the query compares two of them by name or period, issue one document_retrieval step per document, each with the matching "doc_ids": ["<uuid>"].
 
 Return a JSON object with a single key "steps" whose value is an ordered list of tool call objects.
 Each object must have exactly two keys:
@@ -41,6 +43,14 @@ Example for "Compare Apple and Microsoft revenue and latest news":
   "steps": [
     {"tool_name": "company_comparator", "input": {"tickers": ["AAPL", "MSFT"], "metrics": ["revenue"]}},
     {"tool_name": "web_search", "input": {"query": "Apple Microsoft revenue comparison analyst views", "search_type": "news", "max_results": 5}}
+  ]
+}
+
+Example for "How did revenue guidance change between Q2 and Q3?" with [available_documents: [{"id":"uuid-q2","filename":"apple_q2_2024.pdf",...},{"id":"uuid-q3","filename":"apple_q3_2024.pdf",...}]]:
+{
+  "steps": [
+    {"tool_name": "document_retrieval", "input": {"query": "revenue guidance", "doc_ids": ["uuid-q2"]}},
+    {"tool_name": "document_retrieval", "input": {"query": "revenue guidance", "doc_ids": ["uuid-q3"]}}
   ]
 }\
 """
@@ -78,7 +88,16 @@ async def planner_node(state: AgentState) -> dict:
         has_docs = state.get("has_uploaded_documents", False)
         user_content = state["query"]
         if has_docs:
-            user_content = f"[has_documents: true]\n{state['query']}"
+            available_docs = state.get("available_documents") or []
+            if available_docs:
+                docs_json = json.dumps(available_docs, separators=(",", ":"))
+                user_content = (
+                    f"[has_documents: true]\n"
+                    f"[available_documents: {docs_json}]\n"
+                    f"{state['query']}"
+                )
+            else:
+                user_content = f"[has_documents: true]\n{state['query']}"
 
         response = await openai_client.chat.completions.create(
             model=settings.PLANNER_MODEL,

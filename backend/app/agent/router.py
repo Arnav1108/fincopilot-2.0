@@ -54,6 +54,9 @@ Category: simple
 Query: "Compare Apple, Microsoft, and Google profit margins over the last 3 years"
 Category: complex
 
+Query: "[has_documents: true]\nHow did Apple's revenue guidance change between Q2 and Q3?"
+Category: complex
+
 Query: "Get Apple's 10-K and summarise the main risks"
 Category: complex
 

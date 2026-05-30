@@ -16,9 +16,10 @@ You are a financial research assistant. Synthesise information from the retrieve
 Rules:
 1. Base your answer ONLY on the document chunks provided. Do not use outside knowledge.
 2. Do NOT provide buy, sell, or hold recommendations. If asked, state clearly that your output does not constitute financial advice and describe only what the documents say.
-3. Each chunk is labeled [N] (filename). Cite by document name inline, e.g. "According to Apple_2024_10K.pdf, …". Use [N] references only when the filename alone is ambiguous.
+3. Each chunk is labeled [N] [Source: filename]. Cite sources inline using [1], [2], etc., mapped to the chunk numbers provided.
 4. Tailor your response to the analyst's profile: acknowledge their role and focus areas when relevant.
-5. If the documents do not contain enough information to answer the query, say so explicitly.\
+5. If the documents do not contain enough information to answer the query, say so explicitly.
+6. When chunks from multiple distinct source documents are present, structure your answer as a comparison: address each source document separately under a brief label, then summarise the key differences.\
 """
 
 _SYSTEM_PROMPT_TOOLS = """\
@@ -57,6 +58,19 @@ _DOCUMENT_KEYWORDS = frozenset([
 def _is_document_specific(query: str) -> bool:
     q = query.lower()
     return any(kw in q for kw in _DOCUMENT_KEYWORDS)
+
+
+def _doc_label(metadata: dict | None) -> str:
+    """Return a display label for a chunk's source document.
+
+    Prefers doc_filename (populated by retrieval service join).
+    Falls back to first 8 chars of document_id for legacy chunks.
+    """
+    m = metadata or {}
+    if m.get("doc_filename"):
+        return m["doc_filename"][:60]
+    doc_id = m.get("document_id", "")
+    return str(doc_id)[:8] if doc_id else "unknown"
 
 
 _CHART_EXTRACTION_PROMPT = """\
@@ -195,9 +209,8 @@ async def synthesizer_node(state: AgentState) -> dict:
         if reranked_chunks:
             chunk_lines: list[str] = []
             for i, chunk in enumerate(reranked_chunks[:10], start=1):
-                filename = (chunk.get("metadata") or {}).get("document_filename")
-                prefix = f"[{i}] ({filename})" if filename else f"[{i}]"
-                chunk_lines.append(f"{prefix} {chunk['content']}")
+                label = _doc_label(chunk.get("metadata"))
+                chunk_lines.append(f"[{i}] [Source: {label}] {chunk['content']}")
             parts.append("Document chunks:\n" + "\n\n".join(chunk_lines))
 
         user_message = "\n\n".join(parts)

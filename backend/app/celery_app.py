@@ -6,7 +6,7 @@ celery_app = Celery(
     "fincopilot",
     broker=settings.REDIS_URL,
     backend=settings.REDIS_URL,
-    include=["app.tasks.ingestion"],
+    include=["app.tasks.ingestion", "app.tasks.memory_extraction"],
 )
 
 celery_app.conf.update(

@@ -205,3 +205,124 @@ async def test_chunk_result_multi_document_filenames(db: AsyncSession, test_user
     filenames = {r.document_filename for r in results}
     assert "Apple_2024_10K.pdf" in filenames
     assert "Apple_Q3_2024_earnings.pdf" in filenames
+
+
+# ── doc_ids filter tests ───────────────────────────────────────────────────────
+
+async def _make_two_doc_conversation(db: AsyncSession, user_id: uuid.UUID):
+    """Create a conversation with two documents (A and B), one chunk each."""
+    conv = await make_conversation(db, user_id)
+    doc_a = Document(
+        user_id=user_id,
+        conversation_id=conv.id,
+        filename="apple_q2_2024.pdf",
+        doc_type=DocumentType.filing_10q,
+        status=DocumentStatus.ready,
+        ticker="AAPL",
+    )
+    doc_b = Document(
+        user_id=user_id,
+        conversation_id=conv.id,
+        filename="apple_q3_2024.pdf",
+        doc_type=DocumentType.filing_10q,
+        status=DocumentStatus.ready,
+        ticker="AAPL",
+    )
+    db.add(doc_a)
+    db.add(doc_b)
+    await db.commit()
+    await db.refresh(doc_a)
+    await db.refresh(doc_b)
+
+    emb = [0.0] * 1535 + [1.0]
+    await make_chunk(db, doc_a.id, user_id, conv.id, "Q2 revenue guidance content", emb, chunk_index=0)
+    await make_chunk(db, doc_b.id, user_id, conv.id, "Q3 revenue guidance content", emb, chunk_index=0)
+    return conv, doc_a, doc_b
+
+
+async def test_doc_ids_filter_isolates_to_one_document(db: AsyncSession, test_user: User):
+    """retrieve(doc_ids=[doc_a.id]) returns only chunks from doc_a."""
+    conv, doc_a, doc_b = await _make_two_doc_conversation(db, test_user.id)
+    query_emb = [0.0] * 1535 + [1.0]
+    with patch("app.services.retrieval.openai.AsyncOpenAI", return_value=_mock_openai(query_emb)):
+        results = await retrieval_service.retrieve(
+            db, test_user.id, conv.id, "revenue guidance", top_k=5, doc_ids=[doc_a.id]
+        )
+
+    assert len(results) == 1
+    assert results[0].document_id == doc_a.id
+    assert results[0].document_filename == "apple_q2_2024.pdf"
+
+
+async def test_doc_ids_unknown_uuid_returns_empty(db: AsyncSession, test_user: User):
+    """retrieve(doc_ids=[unknown_uuid]) returns [] without raising."""
+    conv, _, _ = await _make_two_doc_conversation(db, test_user.id)
+    unknown = uuid.uuid4()
+    query_emb = [0.0] * 1535 + [1.0]
+    with patch("app.services.retrieval.openai.AsyncOpenAI", return_value=_mock_openai(query_emb)):
+        results = await retrieval_service.retrieve(
+            db, test_user.id, conv.id, "revenue guidance", top_k=5, doc_ids=[unknown]
+        )
+
+    assert results == []
+
+
+async def test_doc_ids_none_returns_all_documents(db: AsyncSession, test_user: User):
+    """retrieve(doc_ids=None) returns chunks from all documents (regression)."""
+    conv, doc_a, doc_b = await _make_two_doc_conversation(db, test_user.id)
+    query_emb = [0.0] * 1535 + [1.0]
+    with patch("app.services.retrieval.openai.AsyncOpenAI", return_value=_mock_openai(query_emb)):
+        results = await retrieval_service.retrieve(
+            db, test_user.id, conv.id, "revenue guidance", top_k=10, doc_ids=None
+        )
+
+    doc_ids_found = {r.document_id for r in results}
+    assert doc_a.id in doc_ids_found
+    assert doc_b.id in doc_ids_found
+
+
+async def test_attribution_metadata_fields_present(db: AsyncSession, test_user: User):
+    """ChunkResult.metadata must contain doc_filename, doc_ticker, doc_type, doc_filing_date."""
+    conv, doc_a, _ = await _make_two_doc_conversation(db, test_user.id)
+    query_emb = [0.0] * 1535 + [1.0]
+    with patch("app.services.retrieval.openai.AsyncOpenAI", return_value=_mock_openai(query_emb)):
+        results = await retrieval_service.retrieve(
+            db, test_user.id, conv.id, "revenue", top_k=5, doc_ids=[doc_a.id]
+        )
+
+    assert len(results) == 1
+    meta = results[0].metadata
+    assert meta is not None
+    assert meta["doc_filename"] == "apple_q2_2024.pdf"
+    assert meta["doc_ticker"] == "AAPL"
+    assert meta["doc_type"] == "10-Q"
+    assert meta["doc_filing_date"] is None  # not set in fixture
+
+
+async def test_attribution_metadata_null_ticker(db: AsyncSession, test_user: User):
+    """When Document.ticker is null, metadata['doc_ticker'] is None (not absent)."""
+    conv = await make_conversation(db, test_user.id)
+    doc = Document(
+        user_id=test_user.id,
+        conversation_id=conv.id,
+        filename="generic_report.pdf",
+        doc_type=DocumentType.other,
+        status=DocumentStatus.ready,
+        ticker=None,
+    )
+    db.add(doc)
+    await db.commit()
+    await db.refresh(doc)
+    emb = [0.0] * 1535 + [1.0]
+    await make_chunk(db, doc.id, test_user.id, conv.id, "some content", emb, chunk_index=0)
+
+    query_emb = [0.0] * 1535 + [1.0]
+    with patch("app.services.retrieval.openai.AsyncOpenAI", return_value=_mock_openai(query_emb)):
+        results = await retrieval_service.retrieve(
+            db, test_user.id, conv.id, "content", top_k=1
+        )
+
+    assert len(results) == 1
+    meta = results[0].metadata
+    assert "doc_ticker" in meta
+    assert meta["doc_ticker"] is None

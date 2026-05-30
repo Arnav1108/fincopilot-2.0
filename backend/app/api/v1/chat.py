@@ -17,7 +17,7 @@ from langchain_core.runnables import RunnableConfig
 from sqlalchemy import func, select, update
 
 from app.agent.graph import compiled_graph
-from app.agent.state import AgentState, MemoryManager
+from app.agent.state import AgentState, MemoryManager, load_user_memories
 from app.agent.stream_context import reset_stream_queue, set_stream_queue
 from app.api.auth import clerk_auth
 from app.config import settings
@@ -27,6 +27,7 @@ from app.models.document import Document, DocumentStatus, DocumentType
 from app.models.user import User
 from app.services.title_generator import generate_title
 from app.tasks.ingestion import ingest_document
+from app.tasks.memory_extraction import extract_memories
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)
@@ -149,6 +150,7 @@ async def _stream_events(
     memory: dict,
     document_ids: list[uuid.UUID],
     has_uploaded_documents: bool,
+    available_documents: list[dict],
 ) -> AsyncGenerator[str, None]:
     # ── Phase 1: wait for file ingestion ─────────────────────────────────────
     if document_ids:
@@ -233,8 +235,9 @@ async def _stream_events(
         "recent_messages": memory.get("recent_messages", []),
         "final_output": "",
         "error": None,
-        "analyst_profile": {},
+        "analyst_profile": memory.get("analyst_profile", {}),
         "has_uploaded_documents": has_uploaded_documents,
+        "available_documents": available_documents,
         "portfolio_data": None,
         "chart_data": None,
     }
@@ -341,6 +344,17 @@ async def _stream_events(
             )
             yield _sse("error", {"message": "Failed to save assistant message"})
             return
+
+        # ── Fire memory extraction task (non-blocking) ────────────────────
+        if final_output:
+            try:
+                extract_memories.delay(str(user_id), str(conversation_id))
+            except Exception as _delay_err:
+                logger.warning(
+                    "memory_extraction_dispatch_failed",
+                    conversation_id=str(conversation_id),
+                    error=str(_delay_err),
+                )
 
         # ── Phase 5: LangSmith trace URL (best-effort, never fails) ──────
         await asyncio.sleep(1.0)
@@ -586,13 +600,35 @@ async def stream_chat(
 
         memory = await MemoryManager().load_memory(db, str(user.id), str(conversation_id))
 
-        doc_count_result = await db.execute(
-            select(func.count(Document.id)).where(
+        try:
+            analyst_profile = await load_user_memories(db, str(user.id))
+        except Exception as _mem_err:
+            logger.error("user_memories_load_failed", user_id=str(user.id), error=str(_mem_err))
+            analyst_profile = {}
+        memory["analyst_profile"] = analyst_profile
+
+        docs_result = await db.execute(
+            select(Document)
+            .where(
                 Document.conversation_id == conversation_id,
+                Document.user_id == user.id,
                 Document.status == DocumentStatus.ready,
             )
+            .order_by(Document.created_at.asc())
+            .limit(20)
         )
-        has_uploaded_documents = (doc_count_result.scalar() or 0) > 0
+        ready_docs = docs_result.scalars().all()
+        has_uploaded_documents = len(ready_docs) > 0
+        available_documents = [
+            {
+                "id": str(d.id),
+                "filename": d.filename,
+                "doc_type": d.doc_type.value if d.doc_type else "other",
+                "ticker": d.ticker,
+                "filing_date": d.filing_date.isoformat() if d.filing_date else None,
+            }
+            for d in ready_docs
+        ]
 
     if is_first_user_message:
         asyncio.create_task(_set_auto_title(conversation_id, message))
@@ -628,6 +664,7 @@ async def stream_chat(
             memory,
             document_ids,
             has_uploaded_documents,
+            available_documents,
         ),
         media_type="text/event-stream; charset=utf-8",
         headers={

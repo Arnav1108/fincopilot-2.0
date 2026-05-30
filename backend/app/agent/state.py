@@ -72,6 +72,7 @@ class AgentState(TypedDict):
     error: str | None
     model: str
     has_uploaded_documents: bool
+    available_documents: list[dict]
     portfolio_data: dict | None
     chart_data: dict | None
 
@@ -157,3 +158,31 @@ class MemoryManager:
         summary = response.choices[0].message.content.strip()
         logger.debug("summary_regenerated", word_count=len(summary.split()))
         return summary
+
+
+# ---------------------------------------------------------------------------
+# Cross-session memory loader
+# ---------------------------------------------------------------------------
+
+async def load_user_memories(db: AsyncSession, user_id: str) -> dict:
+    """Load stored facts for *user_id* and return a formatted analyst_profile dict.
+
+    Returns {"prior_context": "<bullet list>"} when memories exist, or {} when
+    there are none.  Propagates exceptions — the caller in chat.py owns the
+    error-handling fallback (req #13).
+    """
+    from app.models.memory import UserMemory  # local import avoids circular at module load
+
+    logger = structlog.get_logger(__name__)
+    u_id = uuid.UUID(user_id)
+    result = await db.execute(
+        select(UserMemory)
+        .where(UserMemory.user_id == u_id)
+        .order_by(UserMemory.created_at.asc())
+    )
+    memories = result.scalars().all()
+    logger.debug("user_memories_loaded", user_id=user_id, count=len(memories))
+    if not memories:
+        return {}
+    bullets = "\n".join(f"- [{m.fact_type}] {m.content}" for m in memories)
+    return {"prior_context": bullets}

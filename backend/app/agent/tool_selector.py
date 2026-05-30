@@ -30,7 +30,7 @@ _SYSTEM_PROMPT = """\
 You are a tool selector for a financial research assistant. Given the user's query, select the single most appropriate tool to answer it, or return null if no tool is needed.
 
 Available tools:
-- document_retrieval: Search through the user's ingested documents using semantic search. Input: {"query": str}. Use this when the user asks about content in their uploaded documents.
+- document_retrieval: Search through the user's ingested documents using semantic search. Input: {"query": str, "doc_ids": ["<uuid>"] (optional)}. Use this when the user asks about content in their uploaded documents. Accepts an optional "doc_ids" list to target one specific document when the user's question refers to a named document from [available_documents]. If a comparison requires two targeted retrievals, do not select this tool — the query must be routed as complex.
 - financial_data: Fetch live stock price, income statement, balance sheet, and cash flow for a single ticker. Input: {"ticker": str} (uppercase, e.g. "AAPL"). Use for single-company financial lookups.
 - web_search: Search the web for current news, market data, or analyst commentary. Input: {"query": str, "search_type": "news"|"general"|"financial", "max_results": int (1-10, default 5)}.
 - company_comparator: Compare financial metrics side-by-side for multiple tickers. Input: {"tickers": ["AAPL", "MSFT"], "metrics": ["revenue", "pe_ratio"]}. Use when comparing metrics across 2+ companies (but only one category of metrics).
@@ -53,6 +53,7 @@ Query: "What is Apple's current stock price?" → {"tool_name": "financial_data"
 Query: "Explain what a P/E ratio is" → {"tool_name": null, "input": {}}
 Query: "What happened to Tesla this week?" → {"tool_name": "web_search", "input": {"query": "Tesla stock news this week", "search_type": "news", "max_results": 5}}
 Query: "[has_documents: true]\\nWhat does the document say about risks?" → {"tool_name": "document_retrieval", "input": {"query": "risks"}}
+Query: "[has_documents: true]\\n[available_documents: [{\"id\":\"uuid-q2\",\"filename\":\"apple_q2.pdf\",...},...]]\\nWhat does the Q2 filing say about iPhone margins?" → {"tool_name": "document_retrieval", "input": {"query": "iPhone margins", "doc_ids": ["uuid-q2"]}}
 Query: "Get Apple's latest 10-K" → {"tool_name": "document_finder", "input": {"ticker": "AAPL", "filing_type": "10-K"}}
 Query: "How is my portfolio doing?" → {"tool_name": "portfolio_analysis", "input": {}}
 Query: "Which of my holdings is performing best?" → {"tool_name": "portfolio_analysis", "input": {}}
@@ -71,7 +72,16 @@ async def tool_selector_node(state: AgentState) -> dict:
 
         user_message = state["query"]
         if state.get("has_uploaded_documents"):
-            user_message = f"[has_documents: true]\n{state['query']}"
+            available_docs = state.get("available_documents") or []
+            if available_docs:
+                docs_json = json.dumps(available_docs, separators=(",", ":"))
+                user_message = (
+                    f"[has_documents: true]\n"
+                    f"[available_documents: {docs_json}]\n"
+                    f"{state['query']}"
+                )
+            else:
+                user_message = f"[has_documents: true]\n{state['query']}"
 
         response = await openai_client.chat.completions.create(
             model=settings.TOOL_SELECTOR_MODEL,

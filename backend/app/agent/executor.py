@@ -49,12 +49,36 @@ async def _run_step(i: int, step: dict, state: AgentState) -> tuple[str, dict, A
         if tool_name == "document_retrieval":
             if isinstance(raw_input.get("query"), str):
                 raw_input["query"] = raw_input["query"][:_MAX_RETRIEVAL_QUERY_LEN]
+            if raw_input.get("doc_ids"):
+                valid_ids = {d["id"] for d in (state.get("available_documents") or [])}
+                original = [str(x) for x in raw_input["doc_ids"]]
+                filtered = [x for x in raw_input["doc_ids"] if str(x) in valid_ids]
+                dropped = set(original) - {str(x) for x in filtered}
+                if dropped:
+                    logger.warning(
+                        "executor_doc_ids_invalid_dropped",
+                        dropped=list(dropped),
+                        step_key=step_key,
+                    )
+                raw_input["doc_ids"] = filtered if filtered else None
 
         tool_input = _TOOL_INPUT_MODELS[tool_name].model_validate(raw_input)
 
         emit_event({"type": "tool_call", "tool_name": tool_name, "step_id": step_key, "status": "running"})
         result = await TOOL_REGISTRY[tool_name](tool_input)
         emit_event({"type": "tool_call", "tool_name": tool_name, "step_id": step_key, "status": "complete"})
+
+        if (
+            tool_name == "document_retrieval"
+            and hasattr(result, "chunks")
+            and not result.chunks
+            and step.get("input", {}).get("doc_ids")
+        ):
+            logger.warning(
+                "executor_retrieval_empty_for_doc_ids",
+                doc_ids=step["input"]["doc_ids"],
+                step_key=step_key,
+            )
 
         envelope: dict = {"tool_name": tool_name, "status": "ok", "data": result.model_dump(mode="json")}
         return step_key, envelope, result

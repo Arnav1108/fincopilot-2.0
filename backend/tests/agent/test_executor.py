@@ -170,3 +170,82 @@ async def test_document_retrieval_runs_first():
         await executor_node(_make_state(plan=plan))
 
     assert call_order.index("document_retrieval") < call_order.index("web_search")
+
+
+# ---------------------------------------------------------------------------
+# doc_ids validation tests
+# ---------------------------------------------------------------------------
+
+_DOC_A_ID = str(uuid.uuid4())
+_DOC_B_ID = str(uuid.uuid4())
+_UNKNOWN_ID = str(uuid.uuid4())
+
+
+def _make_state_with_docs(**overrides):
+    return _make_state(
+        available_documents=[
+            {"id": _DOC_A_ID, "filename": "apple_q2.pdf", "doc_type": "10-Q", "ticker": "AAPL", "filing_date": None},
+            {"id": _DOC_B_ID, "filename": "apple_q3.pdf", "doc_type": "10-Q", "ticker": "AAPL", "filing_date": None},
+        ],
+        **overrides,
+    )
+
+
+async def test_doc_ids_valid_uuid_passes_through():
+    """A doc_id present in available_documents is kept and passed to the tool."""
+    captured_inputs: list = []
+
+    async def mock_retrieval(inp):
+        captured_inputs.append(inp)
+        return _retrieval_result(["chunk content"])
+
+    plan = [{"tool_name": "document_retrieval", "input": {"query": "revenue", "doc_ids": [_DOC_A_ID]}}]
+    with patch("app.agent.executor.TOOL_REGISTRY", {"document_retrieval": AsyncMock(side_effect=mock_retrieval)}):
+        await executor_node(_make_state_with_docs(plan=plan))
+
+    assert len(captured_inputs) == 1
+    assert captured_inputs[0].doc_ids is not None
+    assert len(captured_inputs[0].doc_ids) == 1
+
+
+async def test_doc_ids_invalid_uuid_dropped():
+    """A doc_id NOT in available_documents is dropped; tool is called with doc_ids=None."""
+    captured_inputs: list = []
+
+    async def mock_retrieval(inp):
+        captured_inputs.append(inp)
+        return _retrieval_result(["chunk content"])
+
+    plan = [{"tool_name": "document_retrieval", "input": {"query": "revenue", "doc_ids": [_UNKNOWN_ID]}}]
+    with patch("app.agent.executor.TOOL_REGISTRY", {"document_retrieval": AsyncMock(side_effect=mock_retrieval)}):
+        await executor_node(_make_state_with_docs(plan=plan))
+
+    assert len(captured_inputs) == 1
+    assert captured_inputs[0].doc_ids is None  # all dropped → None → full retrieval
+
+
+async def test_doc_ids_all_dropped_falls_back_to_full_retrieval():
+    """When all doc_ids are invalid, the tool is called with doc_ids=None."""
+    captured_inputs: list = []
+
+    async def mock_retrieval(inp):
+        captured_inputs.append(inp)
+        return _retrieval_result([])
+
+    plan = [{"tool_name": "document_retrieval", "input": {"query": "revenue", "doc_ids": [_UNKNOWN_ID]}}]
+    with patch("app.agent.executor.TOOL_REGISTRY", {"document_retrieval": AsyncMock(side_effect=mock_retrieval)}):
+        await executor_node(_make_state_with_docs(plan=plan))
+
+    assert captured_inputs[0].doc_ids is None
+
+
+async def test_doc_ids_empty_targeted_retrieval_no_rag():
+    """Zero chunks from a targeted (doc_ids) retrieval leaves rag_used=False."""
+    plan = [{"tool_name": "document_retrieval", "input": {"query": "revenue", "doc_ids": [_DOC_A_ID]}}]
+    mock_retrieval = AsyncMock(return_value=_retrieval_result([]))  # zero chunks
+
+    with patch("app.agent.executor.TOOL_REGISTRY", {"document_retrieval": mock_retrieval}):
+        result = await executor_node(_make_state_with_docs(plan=plan))
+
+    assert result["rag_used"] is False
+    assert result["retrieved_chunks"] == []

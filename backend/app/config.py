@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     EVALUATOR_MODEL: str = "gpt-4o-mini"
     SYNTHESIZER_MODEL: str = "gpt-4o"
     SUMMARY_MODEL: str = "gpt-4o-mini"
+    MEMORY_EXTRACTION_MODEL: str = "gpt-4o-mini"
+    USER_MEMORY_MAX_COUNT: int = 20
 
     @field_validator("ALLOWED_ORIGINS", mode="before")
     @classmethod
