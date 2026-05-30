@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import openai
 import structlog
 
 from app.agent.state import AgentState
 from app.agent.stream_context import emit_event
 from app.config import settings
+from app.services.openai_client import openai_client
 
 _SYSTEM_PROMPT = """\
 You are a query router for a financial research assistant. Classify the user query into exactly one of three categories and respond with only that word.
@@ -73,8 +73,6 @@ async def router_node(state: AgentState) -> dict:
     )
     emit_event({"type": "node_update", "node": "router_node", "status": "running"})
     try:
-        client = openai.AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
-
         user_message = state["query"]
         context_parts: list[str] = []
         if state.get("has_uploaded_documents"):
@@ -87,7 +85,7 @@ async def router_node(state: AgentState) -> dict:
         if context_parts:
             user_message = "\n".join(context_parts) + f"\n\nCurrent query: {state['query']}"
 
-        response = await client.chat.completions.create(
+        response = await openai_client.chat.completions.create(
             model=settings.ROUTER_MODEL,
             messages=[
                 {"role": "system", "content": _SYSTEM_PROMPT},

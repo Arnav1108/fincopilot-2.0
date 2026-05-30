@@ -3,12 +3,12 @@ from __future__ import annotations
 import json
 from typing import Any
 
-import openai
 import structlog
 
 from app.agent.state import AgentState, PlanStep
 from app.agent.stream_context import emit_event
 from app.config import settings
+from app.services.openai_client import openai_client
 from app.tools import TOOL_REGISTRY
 
 _PLAN_STEP_KEYS = {"tool_name", "input"}
@@ -74,14 +74,12 @@ async def planner_node(state: AgentState) -> dict:
         if state["classification"] != "complex":
             return {"plan": []}
 
-        client = openai.AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
-
         has_docs = state.get("has_uploaded_documents", False)
         user_content = state["query"]
         if has_docs:
             user_content = f"[has_documents: true]\n{state['query']}"
 
-        response = await client.chat.completions.create(
+        response = await openai_client.chat.completions.create(
             model=settings.PLANNER_MODEL,
             messages=[
                 {"role": "system", "content": _SYSTEM_PROMPT},

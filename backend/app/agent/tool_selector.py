@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import json
 
-import openai
 import structlog
 from pydantic import ValidationError
 
 from app.agent.state import AgentState
 from app.agent.stream_context import emit_event
 from app.config import settings
+from app.services.openai_client import openai_client
 from app.schemas.tools.company_comparator import CompanyComparatorInput
 from app.schemas.tools.document_finder import DocumentFinderInput
 from app.schemas.tools.document_retrieval import DocumentRetrievalInput
@@ -63,13 +63,11 @@ async def tool_selector_node(state: AgentState) -> dict:
         if state["classification"] != "simple":
             return {"plan": []}
 
-        client = openai.AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
-
         user_message = state["query"]
         if state.get("has_uploaded_documents"):
             user_message = f"[has_documents: true]\n{state['query']}"
 
-        response = await client.chat.completions.create(
+        response = await openai_client.chat.completions.create(
             model=settings.TOOL_SELECTOR_MODEL,
             messages=[
                 {"role": "system", "content": _SYSTEM_PROMPT},

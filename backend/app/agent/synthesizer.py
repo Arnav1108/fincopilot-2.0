@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import json
 
-import openai
 import structlog
 
 from app.agent.state import AgentState
 from app.agent.stream_context import emit_event
 from app.config import settings
+from app.services.openai_client import openai_client
 
 _SYSTEM_PROMPT_RAG = """\
 You are a financial research assistant. Synthesise information from the retrieved document chunks into a clear, accurate answer.
@@ -124,9 +124,7 @@ async def synthesizer_node(state: AgentState) -> dict:
 
         user_message = "\n\n".join(parts)
 
-        client = openai.AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
-
-        response = await client.chat.completions.create(
+        response = await openai_client.chat.completions.create(
             model=model,
             messages=[
                 {"role": "system", "content": system_prompt},

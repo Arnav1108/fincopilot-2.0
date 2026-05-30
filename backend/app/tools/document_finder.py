@@ -15,6 +15,7 @@ from app.config import settings
 from app.database import AsyncSessionFactory
 from app.models.document import Document, DocumentStatus, DocumentType
 from app.schemas.tools.document_finder import DocumentFinderInput, DocumentFinderOutput
+from app.services.sec_edgar import SUBMISSIONS_URL, edgar_user_agent, get_cik
 from app.tasks.ingestion import ingest_document
 from app.tools.base import BaseTool, ToolNotFoundError, ToolUpstreamError
 
@@ -23,11 +24,8 @@ logger = structlog.get_logger(__name__)
 _SEC_FILING_TYPES: frozenset[str] = frozenset({"10-K", "10-Q"})
 _POLL_TIMEOUT = 600.0
 _HTTP_TIMEOUT = 30.0
-_CONFIRM_TTL = 120          # seconds the user has to respond
+_CONFIRM_TTL = 120
 _CONFIRM_POLL_INTERVAL = 0.5
-_CIK_CACHE: dict[str, str] = {}
-_TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
-_SUBMISSIONS_URL = "https://data.sec.gov/submissions/CIK{cik}.json"
 
 _DOC_TYPE_MAP: dict[str, DocumentType] = {
     "10-K": DocumentType.filing_10k,
@@ -39,31 +37,6 @@ _DOC_TYPE_MAP: dict[str, DocumentType] = {
 
 def _redis_client() -> aioredis.Redis:
     return aioredis.from_url(settings.REDIS_URL, decode_responses=True)
-
-
-def _user_agent() -> str:
-    email = settings.SEC_EDGAR_CONTACT_EMAIL or "fincopilot@example.com"
-    return f"FinCopilot Research Tool {email}"
-
-
-async def _get_cik(ticker: str, client: httpx.AsyncClient) -> str:
-    if ticker in _CIK_CACHE:
-        return _CIK_CACHE[ticker]
-
-    resp = await client.get(_TICKERS_URL)
-    resp.raise_for_status()
-    data = resp.json()
-
-    lookup = {
-        v["ticker"].upper(): str(v["cik_str"]).zfill(10)
-        for v in data.values()
-    }
-    _CIK_CACHE.update(lookup)
-
-    if ticker not in _CIK_CACHE:
-        raise ToolNotFoundError(f"Ticker {ticker!r} not found in SEC EDGAR")
-
-    return _CIK_CACHE[ticker]
 
 
 class DocumentFinderTool(BaseTool[DocumentFinderInput, DocumentFinderOutput]):
@@ -157,13 +130,13 @@ class DocumentFinderTool(BaseTool[DocumentFinderInput, DocumentFinderOutput]):
     # ── SEC EDGAR route ────────────────────────────────────────────────────────
 
     async def _sec_route(self, input: DocumentFinderInput, ticker: str) -> DocumentFinderOutput:
-        headers = {"User-Agent": _user_agent(), "Accept-Encoding": "gzip, deflate"}
+        headers = {"User-Agent": edgar_user_agent(), "Accept-Encoding": "gzip, deflate"}
 
         # Phase 1: resolve filing metadata (no download yet)
         async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT, headers=headers) as client:
-            cik = await _get_cik(ticker, client)
+            cik = await get_cik(ticker, client)
 
-            subs_resp = await client.get(_SUBMISSIONS_URL.format(cik=cik))
+            subs_resp = await client.get(SUBMISSIONS_URL.format(cik=cik))
             subs_resp.raise_for_status()
             subs = subs_resp.json()
 
