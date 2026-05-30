@@ -3,12 +3,56 @@ import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import delete
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
+from app.config import settings
 from app.models.conversation import Conversation
 from app.models.document import Document, DocumentChunk, DocumentStatus, DocumentType
 from app.models.user import User
 from app.services.retrieval import retrieval_service
+
+# Independent session factory — same DB as conftest (fincopilot_test) but a
+# separate engine so it never shares a connection with the session-scoped
+# setup_test_db fixture, avoiding "Future attached to a different loop" /
+# "another operation is in progress" errors.
+_base, _ = settings.DATABASE_URL.rsplit("/", 1)
+_TEST_DB_URL = f"{_base}/fincopilot_test"
+_test_engine = create_async_engine(_TEST_DB_URL, echo=False, poolclass=NullPool)
+_IsolatedSession = async_sessionmaker(
+    _test_engine, class_=AsyncSession, expire_on_commit=False
+)
+
+
+# ── Local fixture overrides ────────────────────────────────────────────────────
+
+@pytest.fixture
+async def db():
+    async with _IsolatedSession() as session:
+        yield session
+
+
+@pytest.fixture
+async def test_user(db: AsyncSession):
+    user = User(clerk_user_id=f"test_{uuid.uuid4()}")
+    db.add(user)
+    await db.commit()
+    await db.refresh(user)
+    yield user
+    await db.execute(delete(User).where(User.id == user.id))
+    await db.commit()
+
+
+@pytest.fixture
+async def test_user_2(db: AsyncSession):
+    user = User(clerk_user_id=f"test_{uuid.uuid4()}")
+    db.add(user)
+    await db.commit()
+    await db.refresh(user)
+    yield user
+    await db.execute(delete(User).where(User.id == user.id))
+    await db.commit()
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

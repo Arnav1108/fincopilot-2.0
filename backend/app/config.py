@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     SUMMARY_MODEL: str = "gpt-4o-mini"
     MEMORY_EXTRACTION_MODEL: str = "gpt-4o-mini"
     USER_MEMORY_MAX_COUNT: int = 20
+    HYBRID_SEARCH_ALPHA: float = 0.7
 
     @field_validator("ALLOWED_ORIGINS", mode="before")
     @classmethod
