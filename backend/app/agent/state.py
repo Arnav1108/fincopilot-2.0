@@ -28,10 +28,13 @@ from app.models.conversation import Conversation, Message
 # ---------------------------------------------------------------------------
 
 class PlanStep(TypedDict):
-    id: str
     tool_name: str
-    input_template: str
-    dependencies: list[str]
+    input: dict[str, Any]
+
+# tool_results value contract:
+# success: {"tool_name": str, "status": "ok", "data": <json-serializable dict>}
+# failure: {"tool_name": str, "status": "error", "error": str}
+# keys are stable step keys: "step_0", "step_1", ...
 
 
 class RecentMessage(TypedDict):

@@ -1,23 +1,25 @@
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 from langgraph.graph import END, StateGraph
 
 from app.agent.graph import (
     _build_graph,
-    route_after_evaluator,
+    route_after_executor,
+    route_after_planner,
     route_after_router,
+    route_after_tool_selector,
 )
 from app.agent.state import AgentState
 
 
 # ---------------------------------------------------------------------------
-# route_after_router (5 tests)
+# route_after_router
 # ---------------------------------------------------------------------------
 
 def test_router_routes_simple():
-    assert route_after_router({"classification": "simple"}) == "executor_node"
+    assert route_after_router({"classification": "simple"}) == "tool_selector_node"
 
 
 def test_router_routes_complex():
@@ -28,44 +30,65 @@ def test_router_routes_ingest():
     assert route_after_router({"classification": "ingest"}) == END
 
 
-def test_router_routes_unknown_falls_back():
-    assert route_after_router({"classification": "BOGUS"}) == "executor_node"
+def test_router_routes_unknown_falls_back_to_tool_selector():
+    assert route_after_router({"classification": "BOGUS"}) == "tool_selector_node"
 
 
-def test_router_missing_key_falls_back():
-    assert route_after_router({}) == "executor_node"
+def test_router_missing_key_falls_back_to_planner():
+    # route_after_router defaults classification to "complex" when key is absent
+    assert route_after_router({}) == "planner_node"
+
+
+def test_router_error_short_circuits():
+    assert route_after_router({"error": "router crashed"}) == END
 
 
 # ---------------------------------------------------------------------------
-# route_after_evaluator (7 tests)
+# route_after_tool_selector
 # ---------------------------------------------------------------------------
 
-def test_evaluator_high_score_routes_to_synthesizer():
-    assert route_after_evaluator({"retrieval_quality_score": 0.9, "retry_count": 0}) == "synthesizer_node"
+def test_tool_selector_routes_to_executor():
+    assert route_after_tool_selector({"error": None}) == "executor_node"
 
 
-def test_evaluator_low_score_retry_0_routes_to_executor():
-    assert route_after_evaluator({"retrieval_quality_score": 0.5, "retry_count": 0}) == "executor_node"
+def test_tool_selector_routes_to_executor_no_error_key():
+    assert route_after_tool_selector({}) == "executor_node"
 
 
-def test_evaluator_low_score_retry_1_routes_to_executor():
-    assert route_after_evaluator({"retrieval_quality_score": 0.5, "retry_count": 1}) == "executor_node"
+def test_tool_selector_error_short_circuits():
+    assert route_after_tool_selector({"error": "boom"}) == END
 
 
-def test_evaluator_low_score_retry_2_routes_to_executor():
-    assert route_after_evaluator({"retrieval_quality_score": 0.5, "retry_count": 2}) == "executor_node"
+# ---------------------------------------------------------------------------
+# route_after_planner
+# ---------------------------------------------------------------------------
+
+def test_planner_routes_to_executor():
+    assert route_after_planner({"error": None}) == "executor_node"
 
 
-def test_evaluator_low_score_retry_3_routes_to_synthesizer():
-    assert route_after_evaluator({"retrieval_quality_score": 0.5, "retry_count": 3}) == "synthesizer_node"
+def test_planner_routes_to_executor_no_error_key():
+    assert route_after_planner({}) == "executor_node"
 
 
-def test_evaluator_boundary_score_routes_to_synthesizer():
-    assert route_after_evaluator({"retrieval_quality_score": 0.6, "retry_count": 0}) == "synthesizer_node"
+def test_planner_error_short_circuits():
+    assert route_after_planner({"error": "boom"}) == END
 
 
-def test_evaluator_missing_keys_routes_to_synthesizer():
-    assert route_after_evaluator({}) == "synthesizer_node"
+# ---------------------------------------------------------------------------
+# route_after_executor
+# ---------------------------------------------------------------------------
+
+def test_executor_routes_to_synthesizer():
+    assert route_after_executor({"error": None}) == "synthesizer_node"
+
+
+def test_executor_routes_to_synthesizer_no_error_key():
+    assert route_after_executor({}) == "synthesizer_node"
+
+
+def test_executor_error_short_circuits():
+    assert route_after_executor({"error": "boom"}) == END
 
 
 # ---------------------------------------------------------------------------
@@ -82,53 +105,75 @@ _BASE_STATE: dict = {
     "tool_results": {},
     "retrieved_chunks": [],
     "reranked_chunks": [],
-    "retrieval_quality_score": 0.0,
+    "retrieval_quality_score": 1.0,
+    "rag_used": False,
+    "relevance_score": None,
     "retry_count": 0,
     "conversation_summary": "",
     "recent_messages": [],
     "final_output": "",
     "error": None,
     "model": "gpt-4o",
+    "has_uploaded_documents": False,
 }
 
 
 def _build_test_graph(
-    mock_router, mock_planner, mock_executor, mock_evaluator, mock_synthesizer
+    mock_router,
+    mock_tool_selector,
+    mock_planner,
+    mock_executor,
+    mock_synthesizer,
 ):
     builder = StateGraph(AgentState)
     builder.add_node("router_node", mock_router)
+    builder.add_node("tool_selector_node", mock_tool_selector)
     builder.add_node("planner_node", mock_planner)
     builder.add_node("executor_node", mock_executor)
-    builder.add_node("evaluator_node", mock_evaluator)
     builder.add_node("synthesizer_node", mock_synthesizer)
     builder.set_entry_point("router_node")
     builder.add_conditional_edges(
         "router_node",
         route_after_router,
-        {"planner_node": "planner_node", "executor_node": "executor_node", END: END},
+        {
+            "tool_selector_node": "tool_selector_node",
+            "planner_node": "planner_node",
+            END: END,
+        },
     )
-    builder.add_edge("planner_node", "executor_node")
-    builder.add_edge("executor_node", "evaluator_node")
     builder.add_conditional_edges(
-        "evaluator_node",
-        route_after_evaluator,
-        {"executor_node": "executor_node", "synthesizer_node": "synthesizer_node"},
+        "tool_selector_node",
+        route_after_tool_selector,
+        {"executor_node": "executor_node", END: END},
+    )
+    builder.add_conditional_edges(
+        "planner_node",
+        route_after_planner,
+        {"executor_node": "executor_node", END: END},
+    )
+    builder.add_conditional_edges(
+        "executor_node",
+        route_after_executor,
+        {"synthesizer_node": "synthesizer_node", END: END},
     )
     builder.add_edge("synthesizer_node", END)
     return builder.compile()
 
 
 # ---------------------------------------------------------------------------
-# Integration tests (I1–I5)
+# Integration: simple path topology
 # ---------------------------------------------------------------------------
 
-async def test_graph_simple_path():
+async def test_simple_path_topology():
     call_order: list[str] = []
-    state = dict(_BASE_STATE)
 
     async def mock_router(s):
         call_order.append("router")
         return {"classification": "simple"}
+
+    async def mock_tool_selector(s):
+        call_order.append("tool_selector")
+        return {"plan": []}
 
     async def mock_planner(s):
         call_order.append("planner")
@@ -136,96 +181,105 @@ async def test_graph_simple_path():
 
     async def mock_executor(s):
         call_order.append("executor")
-        return {"tool_results": {}, "retrieved_chunks": [], "reranked_chunks": []}
-
-    async def mock_evaluator(s):
-        call_order.append("evaluator")
-        return {"retrieval_quality_score": 0.9, "retry_count": 0, "query": "test query"}
+        return {"tool_results": {}, "retrieved_chunks": [], "reranked_chunks": [], "rag_used": False}
 
     async def mock_synthesizer(s):
         call_order.append("synthesizer")
         return {"final_output": "answer"}
 
-    graph = _build_test_graph(mock_router, mock_planner, mock_executor, mock_evaluator, mock_synthesizer)
-    await graph.ainvoke(state)
+    graph = _build_test_graph(
+        mock_router, mock_tool_selector, mock_planner, mock_executor, mock_synthesizer
+    )
+    await graph.ainvoke(dict(_BASE_STATE))
 
-    assert call_order == ["router", "executor", "evaluator", "synthesizer"]
+    assert call_order == ["router", "tool_selector", "executor", "synthesizer"]
 
 
-async def test_graph_complex_path():
+# ---------------------------------------------------------------------------
+# Integration: complex path topology
+# ---------------------------------------------------------------------------
+
+async def test_complex_path_topology():
     call_order: list[str] = []
-    state = dict(_BASE_STATE)
 
     async def mock_router(s):
         call_order.append("router")
         return {"classification": "complex"}
 
+    async def mock_tool_selector(s):
+        call_order.append("tool_selector")
+        return {"plan": []}
+
     async def mock_planner(s):
         call_order.append("planner")
         return {"plan": []}
 
     async def mock_executor(s):
         call_order.append("executor")
-        return {"tool_results": {}, "retrieved_chunks": [], "reranked_chunks": []}
-
-    async def mock_evaluator(s):
-        call_order.append("evaluator")
-        return {"retrieval_quality_score": 0.9, "retry_count": 0, "query": "test query"}
+        return {"tool_results": {}, "retrieved_chunks": [], "reranked_chunks": [], "rag_used": False}
 
     async def mock_synthesizer(s):
         call_order.append("synthesizer")
         return {"final_output": "answer"}
 
-    graph = _build_test_graph(mock_router, mock_planner, mock_executor, mock_evaluator, mock_synthesizer)
-    await graph.ainvoke(state)
+    graph = _build_test_graph(
+        mock_router, mock_tool_selector, mock_planner, mock_executor, mock_synthesizer
+    )
+    await graph.ainvoke(dict(_BASE_STATE))
 
-    assert call_order == ["router", "planner", "executor", "evaluator", "synthesizer"]
+    assert call_order == ["router", "planner", "executor", "synthesizer"]
 
 
-async def test_graph_ingest_path():
+# ---------------------------------------------------------------------------
+# Integration: ingest exits at router
+# ---------------------------------------------------------------------------
+
+async def test_ingest_exits_at_router():
     call_order: list[str] = []
-    state = dict(_BASE_STATE)
 
     async def mock_router(s):
         call_order.append("router")
         return {"classification": "ingest"}
 
+    async def mock_tool_selector(s):
+        call_order.append("tool_selector")
+        return {"plan": []}
+
     async def mock_planner(s):
         call_order.append("planner")
         return {"plan": []}
 
     async def mock_executor(s):
         call_order.append("executor")
-        return {"tool_results": {}, "retrieved_chunks": [], "reranked_chunks": []}
-
-    async def mock_evaluator(s):
-        call_order.append("evaluator")
-        return {"retrieval_quality_score": 0.9, "retry_count": 0, "query": "test query"}
+        return {"tool_results": {}, "retrieved_chunks": [], "reranked_chunks": [], "rag_used": False}
 
     async def mock_synthesizer(s):
         call_order.append("synthesizer")
         return {"final_output": "answer"}
 
-    graph = _build_test_graph(mock_router, mock_planner, mock_executor, mock_evaluator, mock_synthesizer)
-    result = await graph.ainvoke(state)
+    graph = _build_test_graph(
+        mock_router, mock_tool_selector, mock_planner, mock_executor, mock_synthesizer
+    )
+    result = await graph.ainvoke(dict(_BASE_STATE))
 
     assert call_order == ["router"]
     assert result.get("final_output", "") == ""
 
 
-async def test_graph_retry_path_two_retries():
-    call_order: list[str] = []
-    state = dict(_BASE_STATE)
+# ---------------------------------------------------------------------------
+# Integration: error short-circuits immediately
+# ---------------------------------------------------------------------------
 
-    evaluator_returns = iter([
-        {"retrieval_quality_score": 0.4, "retry_count": 1, "query": "reformulated-1"},
-        {"retrieval_quality_score": 0.4, "retry_count": 2, "query": "reformulated-2"},
-        {"retrieval_quality_score": 0.4, "retry_count": 3, "query": "reformulated-2"},
-    ])
+async def test_error_short_circuits():
+    call_order: list[str] = []
 
     async def mock_router(s):
         call_order.append("router")
-        return {"classification": "simple"}
+        return {"error": "router crashed"}
+
+    async def mock_tool_selector(s):
+        call_order.append("tool_selector")
+        return {"plan": []}
 
     async def mock_planner(s):
         call_order.append("planner")
@@ -233,66 +287,16 @@ async def test_graph_retry_path_two_retries():
 
     async def mock_executor(s):
         call_order.append("executor")
-        return {"tool_results": {}, "retrieved_chunks": [], "reranked_chunks": []}
-
-    async def mock_evaluator(s):
-        call_order.append("evaluator")
-        return next(evaluator_returns)
+        return {"tool_results": {}, "retrieved_chunks": [], "reranked_chunks": [], "rag_used": False}
 
     async def mock_synthesizer(s):
         call_order.append("synthesizer")
-        return {"final_output": "best effort answer"}
+        return {"final_output": "answer"}
 
-    graph = _build_test_graph(mock_router, mock_planner, mock_executor, mock_evaluator, mock_synthesizer)
-    await graph.ainvoke(state)
+    graph = _build_test_graph(
+        mock_router, mock_tool_selector, mock_planner, mock_executor, mock_synthesizer
+    )
+    result = await graph.ainvoke(dict(_BASE_STATE))
 
-    assert call_order == [
-        "router", "executor", "evaluator",
-        "executor", "evaluator",
-        "executor", "evaluator",
-        "synthesizer",
-    ]
-    assert call_order.count("executor") == 3
-    assert call_order.count("evaluator") == 3
-
-
-async def test_graph_retry_score_improves():
-    call_order: list[str] = []
-    state = dict(_BASE_STATE)
-
-    evaluator_returns = iter([
-        {"retrieval_quality_score": 0.3, "retry_count": 1, "query": "r1"},
-        {"retrieval_quality_score": 0.3, "retry_count": 2, "query": "r2"},
-        {"retrieval_quality_score": 0.85, "retry_count": 2, "query": "r2"},
-    ])
-
-    async def mock_router(s):
-        call_order.append("router")
-        return {"classification": "simple"}
-
-    async def mock_planner(s):
-        call_order.append("planner")
-        return {"plan": []}
-
-    async def mock_executor(s):
-        call_order.append("executor")
-        return {"tool_results": {}, "retrieved_chunks": [], "reranked_chunks": []}
-
-    async def mock_evaluator(s):
-        call_order.append("evaluator")
-        return next(evaluator_returns)
-
-    async def mock_synthesizer(s):
-        call_order.append("synthesizer")
-        return {"final_output": "good answer"}
-
-    graph = _build_test_graph(mock_router, mock_planner, mock_executor, mock_evaluator, mock_synthesizer)
-    await graph.ainvoke(state)
-
-    assert call_order == [
-        "router", "executor", "evaluator",
-        "executor", "evaluator",
-        "executor", "evaluator",
-        "synthesizer",
-    ]
-    assert call_order.count("synthesizer") == 1
+    assert call_order == ["router"]
+    assert result.get("error") == "router crashed"

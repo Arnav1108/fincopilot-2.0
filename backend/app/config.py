@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     LANGCHAIN_TRACING_V2: bool = True
     ROUTER_MODEL: str = "gpt-4o-mini"
     PLANNER_MODEL: str = "gpt-4o-mini"
+    TOOL_SELECTOR_MODEL: str = "gpt-4o-mini"
     EVALUATOR_MODEL: str = "gpt-4o-mini"
     SYNTHESIZER_MODEL: str = "gpt-4o"
     SUMMARY_MODEL: str = "gpt-4o-mini"

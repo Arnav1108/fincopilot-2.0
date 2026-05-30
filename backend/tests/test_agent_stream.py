@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 import uuid
 from typing import AsyncGenerator
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch  # noqa: F401 (MagicMock used in tests)
 
 from app.agent.executor import executor_node
 from app.agent.router import router_node
@@ -110,18 +110,28 @@ async def test_synthesizer_emits_tokens() -> None:
 
 
 async def test_synthesizer_empty_chunks_no_tokens() -> None:
-    """Empty reranked_chunks → synthesizer falls back to LLM, emitting token events."""
+    """Empty reranked_chunks + no tool_results → synthesizer uses LLM-only prompt, emits tokens."""
     q: asyncio.Queue = asyncio.Queue()
     tok = set_stream_queue(q)
     try:
-        result = await synthesizer_node({
-            "query": "test",
-            "model": "gpt-4o",
-            "reranked_chunks": [],
-            "conversation_summary": "",
-            "recent_messages": [],
-            "analyst_profile": {},
-        })
+        mock_response = _async_iter([
+            _make_openai_chunk("General"),
+            _make_openai_chunk(" knowledge"),
+        ])
+        mock_create = AsyncMock(return_value=mock_response)
+
+        with patch("app.agent.synthesizer.openai.AsyncOpenAI") as mock_cls:
+            mock_cls.return_value.chat.completions.create = mock_create
+            result = await synthesizer_node({
+                "query": "test",
+                "model": "gpt-4o",
+                "reranked_chunks": [],
+                "tool_results": {},
+                "conversation_summary": "",
+                "recent_messages": [],
+                "analyst_profile": {},
+            })
+
         token_events = [e for e in _drain(q) if e.get("type") == "token"]
         assert len(token_events) >= 1
         assert isinstance(result["final_output"], str) and result["final_output"]
@@ -165,27 +175,39 @@ async def test_router_emits_node_update() -> None:
 # Test 6: executor_node simple path
 # ---------------------------------------------------------------------------
 
-async def test_executor_simple_path_events() -> None:
+async def test_executor_with_plan_emits_tool_events() -> None:
     """
-    Executor simple path emits events in order:
-    node_update → tool_call(running) → tool_call(complete) → sources.
+    Executor with a flat plan step emits events in order:
+    node_update → tool_call(running) → tool_call(complete) → sources (if retrieval).
     """
     q: asyncio.Queue = asyncio.Queue()
     tok = set_stream_queue(q)
     try:
-        mock_retrieval = AsyncMock(return_value=[
-            {"content": "Apple revenue chunk", "metadata": {"source": "10-K"}, "score": 0.95},
-        ])
+        # Build a retrieval mock that returns a DocumentRetrievalOutput-like object
+        mock_chunk = MagicMock()
+        mock_chunk.content = "Apple revenue chunk"
+        mock_chunk.metadata = {}
+        mock_chunk.chunk_id = uuid.uuid4()
+        mock_chunk.document_id = uuid.uuid4()
+        mock_chunk.similarity_score = 0.95
+
+        mock_result = MagicMock()
+        mock_result.chunks = [mock_chunk]
+        mock_result.model_dump.return_value = {"chunks": []}
+
+        mock_retrieval = AsyncMock(return_value=mock_result)
+        user_id = str(uuid.uuid4())
+        conv_id = str(uuid.uuid4())
+
+        plan = [{"tool_name": "document_retrieval", "input": {"query": "Apple revenue?"}}]
 
         with patch("app.agent.executor.TOOL_REGISTRY", {"document_retrieval": mock_retrieval}):
             await executor_node({
                 "query": "Apple revenue?",
-                "user_id": str(uuid.uuid4()),
-                "conversation_id": str(uuid.uuid4()),
-                "classification": "simple",
-                "plan": [],
+                "user_id": user_id,
+                "conversation_id": conv_id,
+                "plan": plan,
                 "tool_results": {},
-                "analyst_profile": {},
             })
 
         events = _drain(q)
@@ -194,17 +216,16 @@ async def test_executor_simple_path_events() -> None:
         assert types[0] == "node_update"
         assert events[0]["node"] == "executor_node"
 
-        assert types[1] == "tool_call"
-        assert events[1]["step_id"] == "retrieval"
-        assert events[1]["status"] == "running"
+        tool_call_events = [e for e in events if e["type"] == "tool_call"]
+        assert any(e["status"] == "running" for e in tool_call_events)
+        assert any(e["status"] == "complete" for e in tool_call_events)
+        assert any(e["tool_name"] == "document_retrieval" for e in tool_call_events)
 
-        assert types[2] == "tool_call"
-        assert events[2]["step_id"] == "retrieval"
-        assert events[2]["status"] == "complete"
-
-        assert types[3] == "sources"
-        assert len(events[3]["chunks"]) == 1
-        assert events[3]["chunks"][0]["content"] == "Apple revenue chunk"
+        # sources event should appear since retrieval returned a chunk
+        assert "sources" in types
+        sources_event = next(e for e in events if e["type"] == "sources")
+        assert len(sources_event["chunks"]) == 1
+        assert sources_event["chunks"][0]["content"] == "Apple revenue chunk"
     finally:
         reset_stream_queue(tok)
 

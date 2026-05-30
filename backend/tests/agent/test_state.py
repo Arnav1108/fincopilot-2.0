@@ -65,9 +65,9 @@ def _make_openai_client(content: str = "New summary") -> AsyncMock:
 # ---------------------------------------------------------------------------
 
 def test_plan_step_fields():
-    step: PlanStep = {"id": "s1", "tool_name": "sec_filing", "input_template": "{}", "dependencies": []}
-    assert step["id"] == "s1"
-    assert step["dependencies"] == []
+    step: PlanStep = {"tool_name": "document_retrieval", "input": {"query": "revenue"}}
+    assert step["tool_name"] == "document_retrieval"
+    assert step["input"] == {"query": "revenue"}
 
 
 def test_recent_message_fields():

@@ -1,201 +1,176 @@
 from __future__ import annotations
 
 import asyncio
-import json
 from typing import Any
 
 import structlog
+from pydantic import ValidationError
 
 from app.agent.state import AgentState, ChunkDict
 from app.agent.stream_context import emit_event
 from app.schemas.tools.company_comparator import CompanyComparatorInput
 from app.schemas.tools.document_finder import DocumentFinderInput
 from app.schemas.tools.document_retrieval import DocumentRetrievalInput
-from app.schemas.tools.financial_calculator import FinancialCalculatorInput
 from app.schemas.tools.financial_data import FinancialDataInput
 from app.schemas.tools.web_search import WebSearchInput
 from app.tools import TOOL_REGISTRY, ToolError
 
-_MAX_RETRIEVAL_QUERY_LEN = 500  # embedding search quality doesn't improve beyond this
+_MAX_RETRIEVAL_QUERY_LEN = 500
 
 _TOOL_INPUT_MODELS = {
     "company_comparator": CompanyComparatorInput,
     "document_finder": DocumentFinderInput,
     "document_retrieval": DocumentRetrievalInput,
-    "financial_calculator": FinancialCalculatorInput,
     "financial_data": FinancialDataInput,
     "web_search": WebSearchInput,
 }
+
+
+async def _run_step(i: int, step: dict, state: AgentState) -> tuple[str, dict, Any]:
+    """
+    Execute a single plan step. Returns (step_key, envelope, live_result).
+    live_result is the raw tool output before serialization; None on failure.
+    Never raises — failures return a failure envelope so siblings still run.
+    """
+    logger = structlog.get_logger(__name__)
+    tool_name = step["tool_name"]
+    step_key = f"step_{i}"
+    raw_input: dict = dict(step.get("input") or {})
+
+    try:
+        if tool_name in ("document_retrieval", "document_finder"):
+            raw_input["user_id"] = state["user_id"]
+            raw_input["conversation_id"] = state["conversation_id"]
+
+        if tool_name == "document_retrieval":
+            if isinstance(raw_input.get("query"), str):
+                raw_input["query"] = raw_input["query"][:_MAX_RETRIEVAL_QUERY_LEN]
+
+        tool_input = _TOOL_INPUT_MODELS[tool_name].model_validate(raw_input)
+
+        emit_event({"type": "tool_call", "tool_name": tool_name, "step_id": step_key, "status": "running"})
+        result = await TOOL_REGISTRY[tool_name](tool_input)
+        emit_event({"type": "tool_call", "tool_name": tool_name, "step_id": step_key, "status": "complete"})
+
+        envelope: dict = {"tool_name": tool_name, "status": "ok", "data": result.model_dump(mode="json")}
+        return step_key, envelope, result
+
+    except (ToolError, ValidationError) as e:
+        logger.warning(
+            "executor_tool_error",
+            tool_name=tool_name,
+            step_id=step_key,
+            error_type=type(e).__name__,
+            error=str(e),
+        )
+        emit_event({"type": "tool_call", "tool_name": tool_name, "step_id": step_key, "status": "error"})
+        return step_key, {"tool_name": tool_name, "status": "error", "error": str(e)}, None
+
+    except Exception as e:
+        logger.error(
+            "executor_tool_error",
+            tool_name=tool_name,
+            step_id=step_key,
+            error_type=type(e).__name__,
+            error=str(e),
+        )
+        emit_event({"type": "tool_call", "tool_name": tool_name, "step_id": step_key, "status": "error"})
+        return step_key, {"tool_name": tool_name, "status": "error", "error": str(e)}, None
 
 
 async def executor_node(state: AgentState) -> dict:
     logger = structlog.get_logger(__name__)
     emit_event({"type": "node_update", "node": "executor_node", "status": "running"})
     try:
-        classification = state["classification"]
-        existing_tool_results: dict[str, Any] = dict(state.get("tool_results") or {})
+        plan: list[dict] = list(state.get("plan") or [])
 
-        if classification in ("simple", "ingest"):
-            emit_event({"type": "tool_call", "tool_name": "document_retrieval", "step_id": "retrieval", "status": "running"})
-            try:
-                raw = await TOOL_REGISTRY["document_retrieval"](
-                    DocumentRetrievalInput(
-                        query=state["query"][:_MAX_RETRIEVAL_QUERY_LEN],
-                        user_id=state["user_id"],
-                        conversation_id=state["conversation_id"],
-                    )
-                )
-                emit_event({"type": "tool_call", "tool_name": "document_retrieval", "step_id": "retrieval", "status": "complete"})
-            except Exception:
-                emit_event({"type": "tool_call", "tool_name": "document_retrieval", "step_id": "retrieval", "status": "error"})
-                raise
-            chunks = _normalize_chunks(raw)
-            chunks = _dedup_chunks(chunks)
-            reranked_chunks = chunks  # TODO: replace with real reranker in feature/agent-stream
-            emit_event({"type": "sources", "chunks": reranked_chunks})
-            logger.debug(
-                "executor_completed",
-                step_count=1,
-                chunk_count=len(chunks),
-                error_count=0,
-            )
+        if not plan:
             return {
-                "tool_results": existing_tool_results,
-                "retrieved_chunks": chunks,
-                "reranked_chunks": reranked_chunks,
-                "rag_used": len(chunks) > 0,
+                "tool_results": {},
+                "retrieved_chunks": [],
+                "reranked_chunks": [],
+                "rag_used": False,
             }
 
-        # --- complex: execute plan in dependency order ---
-        plan = state.get("plan") or []
         tool_results: dict[str, Any] = {}
-        resolved: set[str] = set()
+        all_chunks: list[ChunkDict] = []
         error_count = 0
 
-        # Build adjacency: step_id -> PlanStep
-        step_map = {step["id"]: step for step in plan}
-        remaining = list(step_map.keys())
+        # Separate document_retrieval steps (run first, sequentially) from others
+        retrieval_steps = [(i, step) for i, step in enumerate(plan) if step["tool_name"] == "document_retrieval"]
+        other_steps = [(i, step) for i, step in enumerate(plan) if step["tool_name"] != "document_retrieval"]
 
-        while remaining:
-            # Collect steps whose dependencies are all resolved
-            ready = [sid for sid in remaining if all(d in resolved for d in step_map[sid]["dependencies"])]
-            if not ready:
-                # Circular or unresolvable — bail out
-                logger.warning("executor_unresolvable_dependencies", remaining=remaining)
-                break
+        # Run document_retrieval steps sequentially first so RAG context
+        # is available before the synthesizer and chunk count is authoritative
+        for i, step in retrieval_steps:
+            step_key, envelope, live_result = await _run_step(i, step, state)
+            tool_results[step_key] = envelope
+            if envelope["status"] == "error":
+                error_count += 1
+            elif live_result is not None:
+                all_chunks.extend(_normalize_chunks(live_result))
 
-            async def _run_step(step_id: str) -> tuple[str, Any]:
-                step = step_map[step_id]
-                emit_event({"type": "tool_call", "tool_name": step["tool_name"], "step_id": step_id, "status": "running"})
-                input_template = step["input_template"]
-                if isinstance(input_template, dict):
-                    # Directly substitute known placeholders in dict values
-                    rendered_dict = {}
-                    for k, v in input_template.items():
-                        if isinstance(v, str):
-                            rendered_dict[k] = v.replace("{query}", state["query"]).replace("{user_id}", state["user_id"]).replace("{conversation_id}", state["conversation_id"])
-                        else:
-                            rendered_dict[k] = v
-                    rendered = json.dumps(rendered_dict)
-                else:
-                    rendered = str(input_template).replace("{query}", state["query"]).replace("{user_id}", state["user_id"]).replace("{conversation_id}", state["conversation_id"])
-                logger.warning("executor_rendered_input", step_id=step_id, tool_name=step["tool_name"], rendered=rendered)
-                try:
-                    tool_input: Any
-                    try:
-                        tool_input = json.loads(rendered)
-                        if not isinstance(tool_input, dict):
-                            tool_input = {"input": rendered}
-                    except (json.JSONDecodeError, ValueError):
-                        tool_input = {"input": rendered}
+        # Run remaining steps concurrently with bounded concurrency ≤4
+        if other_steps:
+            semaphore = asyncio.Semaphore(4)
 
-                    input_cls = _TOOL_INPUT_MODELS.get(step["tool_name"])
-                    if input_cls is not None and isinstance(tool_input, dict):
-                        if step["tool_name"] == "document_retrieval":
-                            # Planner templates are often plain strings, not full JSON objects.
-                            # When the template wasn't JSON, tool_input is {"input": rendered}.
-                            # Reshape it to DocumentRetrievalInput's expected keys.
-                            if set(tool_input.keys()) == {"input"}:
-                                tool_input = {"query": tool_input["input"]}
-                            tool_input.setdefault("user_id", state["user_id"])
-                            tool_input.setdefault("conversation_id", state["conversation_id"])
-                            # Planner templates can expand into very long strings that hurt
-                            # embedding quality and fail schema validation. Truncate hard.
-                            if isinstance(tool_input.get("query"), str):
-                                tool_input["query"] = tool_input["query"][:_MAX_RETRIEVAL_QUERY_LEN]
-                        elif step["tool_name"] == "document_finder":
-                            if set(tool_input.keys()) == {"input"}:
-                                tool_input = {"query": tool_input["input"]}
-                            tool_input["user_id"] = state["user_id"]
-                            tool_input["conversation_id"] = state["conversation_id"]
-                        tool_input = input_cls.model_validate(tool_input)
-                    result = await TOOL_REGISTRY[step["tool_name"]](tool_input)
-                    emit_event({"type": "tool_call", "tool_name": step["tool_name"], "step_id": step_id, "status": "complete"})
-                    return step_id, result
-                except ToolError as e:
-                    logger.warning(
-                        "executor_tool_error",
-                        tool_name=step["tool_name"],
-                        step_id=step_id,
-                        error=str(e),
-                    )
-                    emit_event({"type": "tool_call", "tool_name": step["tool_name"], "step_id": step_id, "status": "error"})
-                    return step_id, {"error": str(e)}
+            async def _run_with_semaphore(idx: int, s: dict) -> tuple[str, dict, Any]:
+                async with semaphore:
+                    return await _run_step(idx, s, state)
 
-            results = await asyncio.gather(*[_run_step(sid) for sid in ready])
+            gathered = await asyncio.gather(*[_run_with_semaphore(i, step) for i, step in other_steps])
 
-            for sid, result in results:
-                tool_results[sid] = result
-                resolved.add(sid)
-                if isinstance(result, dict) and "error" in result:
+            for step_key, envelope, live_result in gathered:
+                tool_results[step_key] = envelope
+                if envelope["status"] == "error":
                     error_count += 1
+                    continue
 
-            remaining = [sid for sid in remaining if sid not in resolved]
-
-        # If document_finder returned a ready/duplicate result, run an immediate retrieval
-        for sid in resolved:
-            step = step_map.get(sid)
-            if step and step["tool_name"] == "document_finder":
-                result = tool_results.get(sid)
-                if hasattr(result, "status") and result.status in ("ready", "duplicate"):
-                    try:
-                        retrieval_result = await TOOL_REGISTRY["document_retrieval"](
-                            DocumentRetrievalInput(
+                # Document finder follow-up: when a filing was successfully fetched,
+                # immediately run a retrieval so the new doc is queryable this turn.
+                if envelope["tool_name"] == "document_finder" and live_result is not None:
+                    if hasattr(live_result, "status") and live_result.status in ("ready", "duplicate"):
+                        retrieval_key = f"{step_key}_retrieval"
+                        try:
+                            retrieval_input = DocumentRetrievalInput(
                                 query=state["query"][:_MAX_RETRIEVAL_QUERY_LEN],
                                 user_id=state["user_id"],
                                 conversation_id=state["conversation_id"],
                             )
-                        )
-                        tool_results[f"{sid}_retrieval"] = retrieval_result
-                        emit_event({"type": "tool_call", "tool_name": "document_retrieval", "step_id": f"{sid}_retrieval", "status": "complete"})
-                    except Exception as e:
-                        logger.warning("document_finder_retrieval_failed", error=str(e))
+                            emit_event({"type": "tool_call", "tool_name": "document_retrieval", "step_id": retrieval_key, "status": "running"})
+                            retrieval_result = await TOOL_REGISTRY["document_retrieval"](retrieval_input)
+                            emit_event({"type": "tool_call", "tool_name": "document_retrieval", "step_id": retrieval_key, "status": "complete"})
+                            tool_results[retrieval_key] = {
+                                "tool_name": "document_retrieval",
+                                "status": "ok",
+                                "data": retrieval_result.model_dump(mode="json"),
+                            }
+                            all_chunks.extend(_normalize_chunks(retrieval_result))
+                        except Exception as e:
+                            logger.warning(
+                                "executor_finder_retrieval_failed",
+                                step_key=step_key,
+                                error=str(e),
+                            )
 
-        # Collect document_retrieval results into flat chunk list
-        all_chunks: list[ChunkDict] = []
-        for sid, result in tool_results.items():
-            step = step_map.get(sid)
-            tool_name = step["tool_name"] if step else None
-            if tool_name == "document_retrieval" or sid.endswith("_retrieval"):
-                all_chunks.extend(_normalize_chunks(result))
+        all_chunks = _dedup_chunks(all_chunks)
+        reranked_chunks = all_chunks  # TODO: replace with real reranker
+        rag_used = len(all_chunks) > 0
 
-        chunks = _dedup_chunks(all_chunks)
-        reranked_chunks = chunks  # TODO: replace with real reranker in feature/agent-stream
-        emit_event({"type": "sources", "chunks": reranked_chunks})
-
-        merged = {**tool_results, **existing_tool_results}
+        if rag_used:
+            emit_event({"type": "sources", "chunks": reranked_chunks})
 
         logger.debug(
             "executor_completed",
             step_count=len(plan),
-            chunk_count=len(chunks),
+            chunk_count=len(all_chunks),
             error_count=error_count,
         )
         return {
-            "tool_results": merged,
-            "retrieved_chunks": chunks,
+            "tool_results": tool_results,
+            "retrieved_chunks": all_chunks,
             "reranked_chunks": reranked_chunks,
-            "rag_used": len(chunks) > 0,
+            "rag_used": rag_used,
         }
 
     except Exception as e:

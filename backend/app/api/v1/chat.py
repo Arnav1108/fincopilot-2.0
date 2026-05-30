@@ -277,6 +277,11 @@ async def _stream_events(
             yield _sse("error", {"message": str(e)})
             return
 
+        # Fatal node error: surface to user and skip all persistence.
+        if final_state.get("error") and not final_state.get("final_output"):
+            yield _sse("error", {"message": final_state["error"]})
+            return
+
         # Ingest path: router classified as ingest, graph exited after router.
         if final_state.get("classification") == "ingest":
             yield _sse("done", {"message_id": None, "conversation_id": str(conversation_id)})
