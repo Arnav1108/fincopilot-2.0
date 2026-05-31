@@ -220,6 +220,10 @@ export default function MessageBubble({
       {!isUser && isStreaming && streamingChartData && (
         <ChartBlock data={streamingChartData} />
       )}
+      {/* Chart skeleton — tool result received but chart_data SSE not yet arrived */}
+      {!isUser && isStreaming && toolCall && !streamingChartData && (
+        <ChartBlock isLoading />
+      )}
     </div>
   )
 }

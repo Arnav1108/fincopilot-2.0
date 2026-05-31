@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { useParams, usePathname, useRouter } from "next/navigation"
-import { Briefcase, Plus, Settings } from "lucide-react"
+import { Brain, Briefcase, Plus, Settings } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useConversations } from "@/hooks/useConversations"
 import ConversationGroup from "./ConversationGroup"
@@ -124,6 +124,19 @@ export default function Sidebar() {
           >
             <Briefcase size={16} />
             <span>Portfolio</span>
+          </button>
+          <button
+            onClick={() => router.push("/memories")}
+            className={cn(
+              "flex items-center gap-2 w-full px-3 py-2 rounded-lg text-sm transition-colors",
+              pathname?.startsWith("/memories")
+                ? "bg-accent text-foreground"
+                : "text-muted-foreground hover:text-foreground hover:bg-accent",
+            )}
+            aria-label="Memories"
+          >
+            <Brain size={16} />
+            <span>Memories</span>
           </button>
           <button
             onClick={() => setSettingsOpen(true)}

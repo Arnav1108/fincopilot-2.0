@@ -136,3 +136,16 @@ export interface HoldingCreate {
   shares: string
   avg_cost_basis?: string | null
 }
+
+export interface MemoryRead {
+  id: string
+  fact_type: string
+  content: string
+  conversation_id: string | null
+  created_at: string
+}
+
+export interface MemoryListResponse {
+  memories: MemoryRead[]
+  count: number
+}

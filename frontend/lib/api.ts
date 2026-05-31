@@ -1,4 +1,4 @@
-import type { ConversationDocumentsResponse, ConversationRead, DocumentRead, HoldingCreate, HoldingRead, MessageRead, PortfolioRead, ProfileRead, ProfileUpdate } from "@/lib/types"
+import type { ConversationDocumentsResponse, ConversationRead, DocumentRead, HoldingCreate, HoldingRead, MemoryListResponse, MessageRead, PortfolioRead, ProfileRead, ProfileUpdate } from "@/lib/types"
 
 const BASE = process.env.NEXT_PUBLIC_API_URL
 
@@ -113,4 +113,12 @@ export function deleteHolding(
     token,
     { method: "DELETE" },
   )
+}
+
+export function listMemories(token: string): Promise<MemoryListResponse> {
+  return apiFetch<MemoryListResponse>("/memories", token)
+}
+
+export function clearMemories(token: string): Promise<void> {
+  return apiFetch<void>("/memories", token, { method: "DELETE" })
 }

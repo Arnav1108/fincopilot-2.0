@@ -4,7 +4,7 @@ from datetime import date, datetime
 from typing import Optional
 
 import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from pgvector.sqlalchemy import Vector
 
@@ -88,6 +88,12 @@ class DocumentChunk(Base):
     )
     chunk_index: Mapped[int] = mapped_column(sa.Integer, nullable=False)
     content: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    content_tsv: Mapped[Optional[str]] = mapped_column(
+        TSVECTOR(),
+        sa.Computed("to_tsvector('english', content)", persisted=True),
+        nullable=True,
+        deferred=True,
+    )
     embedding: Mapped[Optional[list]] = mapped_column(Vector(1536), nullable=True)
     chunk_metadata: Mapped[Optional[dict]] = mapped_column("metadata", JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now())
