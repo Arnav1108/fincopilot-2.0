@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useLayoutEffect, useRef, useState } from "react"
-import { ArrowUp, BarChart2, FileText, Loader2, Paperclip, X } from "lucide-react"
+import { ArrowUp, Loader2, Paperclip, Square, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { IngestProgress } from "@/lib/types"
 
@@ -37,6 +37,7 @@ function fileKey(f: File): string {
 
 interface Props {
   onSend: (message: string, files: File[]) => void
+  onStop?: () => void
   disabled: boolean
   /** Live ingestion progress passed down while the SSE stream is in Phase 1. */
   ingestProgress?: IngestProgress | null
@@ -48,6 +49,7 @@ interface Props {
 
 export default function InputBar({
   onSend,
+  onStop,
   disabled,
   ingestProgress,
   streamError,
@@ -151,6 +153,7 @@ export default function InputBar({
   }, [canSend, onSend, value])
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (disabled) return
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault()
       submit()
@@ -241,11 +244,10 @@ export default function InputBar({
           value={value}
           onChange={handleChange}
           onKeyDown={handleKeyDown}
-          disabled={disabled}
           placeholder={isDragging ? "Drop files here…" : "Ask me anything…"}
           rows={1}
           style={{ height: "auto", resize: "none" }}
-          className="w-full bg-transparent px-4 pb-1 pt-3 text-sm text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed"
+          className="w-full bg-transparent px-4 pb-1 pt-3 text-sm text-foreground outline-none placeholder:text-muted-foreground"
         />
 
         {/* File chips */}
@@ -291,58 +293,52 @@ export default function InputBar({
               }}
             />
 
-            {/* Paperclip — now enabled */}
+            {/* Paperclip */}
             <button
               type="button"
               data-testid="attach-button"
               onClick={() => fileInputRef.current?.click()}
-              disabled={disabled}
               className={cn(
                 "rounded-md p-1.5 transition-colors",
-                disabled
-                  ? "cursor-not-allowed text-muted-foreground opacity-50"
-                  : files.length > 0
-                    ? "text-primary hover:bg-primary/10"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                files.length > 0
+                  ? "text-primary hover:bg-primary/10"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground",
               )}
               aria-label={`Attach file${files.length ? ` (${files.length} attached)` : ""}`}
             >
               <Paperclip size={16} />
             </button>
 
-            {/* Placeholder buttons — still disabled */}
-            <button
-              disabled
-              className="cursor-not-allowed rounded-md p-1.5 text-muted-foreground opacity-50"
-              aria-label="SEC filing (coming soon)"
-            >
-              <FileText size={16} />
-            </button>
-            <button
-              disabled
-              className="cursor-not-allowed rounded-md p-1.5 text-muted-foreground opacity-50"
-              aria-label="Peer comparison (coming soon)"
-            >
-              <BarChart2 size={16} />
-            </button>
+
           </div>
 
-          {/* Send button */}
-          <button
-            type="button"
-            data-testid="send-button"
-            onClick={submit}
-            disabled={!canSend}
-            className={cn(
-              "rounded-full p-1.5 transition-colors",
-              canSend
-                ? "bg-foreground text-background hover:bg-foreground/90"
-                : "cursor-not-allowed text-muted-foreground opacity-50",
-            )}
-            aria-label="Send message"
-          >
-            <ArrowUp size={16} />
-          </button>
+          {/* Send / Stop button */}
+          {disabled ? (
+            <button
+              type="button"
+              onClick={onStop}
+              className="rounded-full p-1.5 transition-colors bg-foreground text-background hover:bg-foreground/90"
+              aria-label="Stop generating"
+            >
+              <Square size={14} fill="currentColor" />
+            </button>
+          ) : (
+            <button
+              type="button"
+              data-testid="send-button"
+              onClick={submit}
+              disabled={!canSend}
+              className={cn(
+                "rounded-full p-1.5 transition-colors",
+                canSend
+                  ? "bg-foreground text-background hover:bg-foreground/90"
+                  : "cursor-not-allowed text-muted-foreground opacity-50",
+              )}
+              aria-label="Send message"
+            >
+              <ArrowUp size={16} />
+            </button>
+          )}
         </div>
       </div>
 

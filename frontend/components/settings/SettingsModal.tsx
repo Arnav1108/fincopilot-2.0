@@ -98,7 +98,7 @@ export default function SettingsModal({ open, onClose }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose() }}>
-      <DialogContent className="sm:max-w-lg bg-card border-border">
+      <DialogContent className="sm:max-w-lg bg-card border-border max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Analyst Profile</DialogTitle>
         </DialogHeader>
@@ -201,7 +201,7 @@ export default function SettingsModal({ open, onClose }: Props) {
               />
             </div>
 
-            {error && <p className="text-sm text-destructive">{error}</p>}
+            {error && <p className="text-sm text-destructive text-center">{error}</p>}
 
             {/* Save */}
             <div className="flex justify-end pt-1">

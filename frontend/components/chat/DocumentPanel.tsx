@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { useAuth } from "@clerk/nextjs"
-import { ChevronLeft, ChevronRight } from "lucide-react"
+import { ChevronLeft, ChevronRight, PanelRight } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { getConversationDocuments } from "@/lib/api"
 import type { DocumentRead } from "@/lib/types"
@@ -50,18 +50,18 @@ export default function DocumentPanel({ conversationId, isOpen, onToggle }: Prop
 
   if (!isOpen) {
     return (
-      <div className="flex w-8 flex-shrink-0 flex-col items-center border-l border-border bg-card">
-        <button
-          type="button"
-          onClick={onToggle}
-          className="mt-3 flex flex-col items-center gap-1 text-muted-foreground transition-colors hover:text-foreground"
-          aria-label="Open documents panel"
-        >
-          <ChevronLeft size={14} />
-          <span className="mt-1 select-none text-xs [writing-mode:vertical-rl] rotate-180">
-            Documents
-          </span>
-        </button>
+      <div className="flex w-[52px] flex-shrink-0 flex-col items-center border-l border-border bg-card transition-all duration-200">
+        <div className="flex flex-col items-center gap-1 px-1.5 py-3">
+          <button
+            type="button"
+            onClick={onToggle}
+            title="Expand documents panel"
+            className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+            aria-label="Open documents panel"
+          >
+            <PanelRight size={16} />
+          </button>
+        </div>
       </div>
     )
   }
@@ -69,16 +69,17 @@ export default function DocumentPanel({ conversationId, isOpen, onToggle }: Prop
   return (
     <div className="flex w-72 flex-shrink-0 flex-col border-l border-border bg-card">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-border px-3 py-3">
-        <span className="text-sm font-medium text-foreground">Documents</span>
+      <div className="flex items-center gap-2 border-b border-border px-3 py-3 mb-2">
         <button
           type="button"
           onClick={onToggle}
-          className="text-muted-foreground transition-colors hover:text-foreground"
+          title="Collapse documents panel"
+          className="rounded-md p-1.5 hover:bg-muted text-muted-foreground transition-colors hover:text-foreground"
           aria-label="Close documents panel"
         >
-          <ChevronRight size={14} />
+          <PanelRight size={16} />
         </button>
+        <span className="text-sm font-medium text-foreground">Documents</span>
       </div>
 
       {/* Document list */}
@@ -104,7 +105,7 @@ export default function DocumentPanel({ conversationId, isOpen, onToggle }: Prop
                 {doc.filename}
               </span>
               {doc.ticker && (
-                <span className="flex-shrink-0 rounded bg-muted px-1 py-0.5 text-xs text-muted-foreground">
+                <span className="flex-shrink-0 max-w-[60px] truncate rounded bg-muted px-1 py-0.5 text-xs text-muted-foreground">
                   {doc.ticker}
                 </span>
               )}

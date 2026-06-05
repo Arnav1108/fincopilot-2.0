@@ -1,43 +1,106 @@
+"use client"
+
+import { useEffect, useRef, useState } from "react"
+import { cn } from "@/lib/utils"
 import type { ToolCall } from "@/lib/types"
+
+const PIPELINE: { key: string; label: string }[] = [
+  { key: "router_node",        label: "Routing" },
+  { key: "tool_selector_node", label: "Selecting tool" },
+  { key: "planner_node",       label: "Planning" },
+  { key: "executor_node",      label: "Executing" },
+  { key: "synthesizer_node",   label: "Synthesizing" },
+]
+
+function getToolIcon(tool_name: string): string {
+  if (tool_name === "document_finder") return "🔎"
+  const map: Record<string, string> = {
+    document_retrieval:   "🔍",
+    web_search:           "🌐",
+    financial_data:       "📈",
+    company_comparator:   "📊",
+    financial_calculator: "🧮",
+  }
+  return map[tool_name] ?? "⚙️"
+}
+
+function getToolLabel(tool_name: string): string {
+  if (tool_name === "document_finder") return "Finding document"
+  const map: Record<string, string> = {
+    document_retrieval:   "Searching documents",
+    web_search:           "Searching web",
+    financial_data:       "Fetching market data",
+    company_comparator:   "Comparing companies",
+    financial_calculator: "Calculating",
+  }
+  return map[tool_name] ?? tool_name
+}
 
 interface Props {
   node: string
   toolCall?: ToolCall
 }
 
-function getToolDisplay(tool_name: string, status: string): { icon: string; label: string } {
-  if (tool_name === "document_finder") {
-    if (status === "ingesting") return { icon: "⬇️", label: "Ingesting document..." }
-    if (status === "complete")  return { icon: "✅", label: "Document ready" }
-    return { icon: "🔎", label: "Finding document" }
-  }
-  const map: Record<string, { icon: string; label: string }> = {
-    document_retrieval:   { icon: "🔍", label: "Searching documents" },
-    web_search:           { icon: "🌐", label: "Searching web" },
-    financial_data:       { icon: "📈", label: "Fetching market data" },
-    company_comparator:   { icon: "📊", label: "Comparing companies" },
-    financial_calculator: { icon: "🧮", label: "Calculating" },
-  }
-  return map[tool_name] ?? { icon: "⚙️", label: tool_name }
-}
-
 export default function AgentStatus({ node, toolCall }: Props) {
-  const toolDisplay = toolCall ? getToolDisplay(toolCall.tool_name, toolCall.status) : null
+  const [completedNodes, setCompletedNodes] = useState<string[]>([])
+  const prevNodeRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    const prev = prevNodeRef.current
+    if (prev && prev !== node) {
+      setCompletedNodes((existing) =>
+        existing.includes(prev) ? existing : [...existing, prev]
+      )
+    }
+    prevNodeRef.current = node
+  }, [node])
+
+  const activeIndex = PIPELINE.findIndex((p) => p.key === node)
+  const nodesToRender =
+    activeIndex === -1
+      ? PIPELINE.filter((p) => completedNodes.includes(p.key))
+      : PIPELINE.slice(0, activeIndex + 1)
 
   return (
-    <div data-testid="agent-status" className="flex flex-col gap-0.5 mt-1">
-      <span className="text-xs text-muted-foreground">
-        {node}<span className="animate-pulse">...</span>
-      </span>
-      {toolDisplay && (
-        <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <span>{toolDisplay.icon}</span>
-          <span>{toolDisplay.label}</span>
-          {toolCall!.status === "ingesting" && (
-            <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
-          )}
-        </span>
-      )}
+    <div data-testid="agent-status" className="flex flex-col gap-0 mt-1">
+      {nodesToRender.map((pipelineNode, i) => {
+        const isActive = pipelineNode.key === node
+        const isLastRendered = i === nodesToRender.length - 1
+
+        return (
+          <div key={pipelineNode.key} className="flex items-start gap-2.5">
+            <div className="flex flex-col items-center" style={{ width: 16 }}>
+              {isActive ? (
+                <div className="relative flex items-center justify-center">
+                  <div className="h-2.5 w-2.5 rounded-full bg-orange-500" />
+                  <div className="absolute h-2.5 w-2.5 rounded-full bg-orange-500 animate-ping opacity-75" />
+                </div>
+              ) : (
+                <div className="h-2.5 w-2.5 rounded-full bg-orange-500/80" />
+              )}
+              {!isLastRendered && (
+                <div className="w-px flex-1 bg-orange-500/30 mt-0.5" style={{ minHeight: 16 }} />
+              )}
+            </div>
+            <div className="pb-3">
+              <span
+                className={cn(
+                  "text-xs font-medium",
+                  isActive ? "text-orange-400" : "text-muted-foreground",
+                )}
+              >
+                {pipelineNode.label}
+              </span>
+              {isActive && pipelineNode.key === "executor_node" && toolCall && (
+                <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <span>{getToolIcon(toolCall.tool_name)}</span>
+                  <span>{getToolLabel(toolCall.tool_name)}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        )
+      })}
     </div>
   )
 }

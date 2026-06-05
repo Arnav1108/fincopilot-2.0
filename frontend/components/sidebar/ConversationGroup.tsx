@@ -22,7 +22,7 @@ export default function ConversationGroup({
 
   return (
     <div className="mb-2">
-      <p className="px-2 py-1 text-xs font-medium text-muted-foreground uppercase tracking-wide">
+      <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider px-3 py-1 mt-2">
         {label}
       </p>
       {conversations.map((conv) => (

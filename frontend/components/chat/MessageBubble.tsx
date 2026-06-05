@@ -18,10 +18,8 @@ interface RagBadgeProps {
   chunkIds?: string[] | null
 }
 
-function ragScoreColor(score: number): string {
-  if (score >= 0.75) return "text-emerald-700 bg-emerald-50 dark:text-emerald-400 dark:bg-emerald-950/40"
-  if (score >= 0.50) return "text-amber-700 bg-amber-50 dark:text-amber-400 dark:bg-amber-950/40"
-  return "text-red-700 bg-red-50 dark:text-red-400 dark:bg-red-950/40"
+function ragScoreColor(_score: number): string {
+  return "text-muted-foreground bg-muted/60"
 }
 
 function RagBadge({ ragUsed, relevanceScore, chunkIds }: RagBadgeProps) {
@@ -126,7 +124,7 @@ export default function MessageBubble({
     <div data-testid="message-assistant" className="flex flex-col gap-2">
       <div
         className={cn(
-          "text-sm leading-relaxed text-foreground",
+          "border-l-2 border-primary/30 pl-4 pt-1 text-sm leading-relaxed text-foreground",
           isEmpty && "text-muted-foreground",
         )}
       >
@@ -201,7 +199,7 @@ export default function MessageBubble({
             )}
       </div>
 
-      {agentStatus && <AgentStatus node={agentStatus} toolCall={toolCall ?? undefined} />}
+      {agentStatus && isEmpty && <AgentStatus node={agentStatus} toolCall={toolCall ?? undefined} />}
       {hasSources && <SourceList sources={sources!} />}
 
       {showRagBadge && (
@@ -219,10 +217,6 @@ export default function MessageBubble({
       {/* Streaming chart — arrives via chart_data SSE event before done */}
       {!isUser && isStreaming && streamingChartData && (
         <ChartBlock data={streamingChartData} />
-      )}
-      {/* Chart skeleton — tool result received but chart_data SSE not yet arrived */}
-      {!isUser && isStreaming && toolCall && !streamingChartData && (
-        <ChartBlock isLoading />
       )}
     </div>
   )

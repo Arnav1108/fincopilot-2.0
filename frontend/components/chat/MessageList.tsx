@@ -47,7 +47,7 @@ export default function MessageList({
       ref={containerRef}
       data-testid="message-list"
       onScroll={handleScroll}
-      className="flex-1 overflow-y-auto"
+      className="flex-1 overflow-y-auto [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border [&::-webkit-scrollbar-track]:transparent"
     >
       {isEmpty ? (
         <div className="h-full flex items-center justify-center px-4">
@@ -56,7 +56,7 @@ export default function MessageList({
           </p>
         </div>
       ) : (
-        <div className="max-w-3xl mx-auto px-4 py-6 space-y-6">
+        <div className="max-w-3xl mx-auto px-4 pt-6 pb-32 space-y-6">
           {messages.map((msg) => (
             <MessageBubble key={msg.id} message={msg} />
           ))}

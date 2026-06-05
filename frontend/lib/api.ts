@@ -59,11 +59,11 @@ export function listMessages(token: string, id: string): Promise<MessageRead[]> 
 }
 
 export function getProfile(token: string): Promise<ProfileRead> {
-  return apiFetch("/profile", token)
+  return apiFetch("/profile/", token)
 }
 
 export function updateProfile(token: string, body: ProfileUpdate): Promise<ProfileRead> {
-  return apiFetch("/profile", token, {
+  return apiFetch("/profile/", token, {
     method: "PUT",
     body: JSON.stringify(body),
   })

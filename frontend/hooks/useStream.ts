@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useState } from "react"
+import { useCallback, useRef, useState } from "react"
 import type { ChartData, ConfirmationRequired, IngestProgress, Source, ToolCall } from "@/lib/types"
 
 const BASE = process.env.NEXT_PUBLIC_API_URL
@@ -33,6 +33,7 @@ interface UseStreamResult {
     files?: File[],
   ) => Promise<void>
   isStreaming: boolean
+  stop: () => void
 }
 
 export default function useStream(options: UseStreamOptions): UseStreamResult {
@@ -51,6 +52,12 @@ export default function useStream(options: UseStreamOptions): UseStreamResult {
   } = options
 
   const [isStreaming, setIsStreaming] = useState(false)
+  const abortRef = useRef<AbortController | null>(null)
+
+  const stop = useCallback(() => {
+    abortRef.current?.abort()
+    setIsStreaming(false)
+  }, [])
 
   const startStream = useCallback(
     async (
@@ -60,6 +67,8 @@ export default function useStream(options: UseStreamOptions): UseStreamResult {
       files?: File[],
     ) => {
       setIsStreaming(true)
+      const controller = new AbortController()
+      abortRef.current = controller
       try {
         // Always multipart/form-data — backend uses FastAPI Form() params.
         // Do NOT set Content-Type manually; the browser supplies the boundary.
@@ -78,6 +87,7 @@ export default function useStream(options: UseStreamOptions): UseStreamResult {
             method: "POST",
             headers: { Authorization: `Bearer ${token}` },
             body,
+            signal: controller.signal,
           },
         )
 
@@ -163,15 +173,17 @@ export default function useStream(options: UseStreamOptions): UseStreamResult {
           }
         }
       } catch (err) {
+        if (err instanceof Error && err.name === "AbortError") return
         onError(err instanceof Error ? err : new Error(String(err)))
       } finally {
+        abortRef.current = null
         setIsStreaming(false)
       }
     },
     [onToken, onNodeUpdate, onSources, onDone, onError, onIngestProgress, onIngestComplete, onToolCall, onConfirmationRequired, onConfirmed, onChartData],
   )
 
-  return { startStream, isStreaming }
+  return { startStream, isStreaming, stop }
 }
 
 // ── error message helpers ─────────────────────────────────────────────────────

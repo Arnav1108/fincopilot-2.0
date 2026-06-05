@@ -15,6 +15,7 @@ import {
   Legend,
   ResponsiveContainer,
 } from "recharts"
+import type { LabelProps } from "recharts"
 import type { ChartData } from "@/lib/types"
 
 const COLORS = ["#2563eb", "#16a34a", "#dc2626", "#d97706", "#7c3aed", "#0891b2"]
@@ -93,8 +94,8 @@ export default function ChartBlock({ data, isLoading }: Props) {
                 cx="50%"
                 cy="50%"
                 outerRadius={100}
-                label={({ name, value }: { name: string; value: number }) =>
-                  `${name}: ${formatPieValue(value, data.y_axis_label)}`
+                label={({ name, value }: { name?: string; value?: number }) =>
+                  `${name ?? ""}: ${formatPieValue(value ?? 0, data.y_axis_label)}`
                 }
               >
                 {pieData.map((_, i) => (
@@ -102,33 +103,57 @@ export default function ChartBlock({ data, isLoading }: Props) {
                 ))}
               </Pie>
               <Tooltip
-                formatter={(value: number) => [
-                  formatPieValue(value, data.y_axis_label),
+                formatter={(value) => [
+                  typeof value === "number" ? formatPieValue(value, data.y_axis_label) : String(value ?? ""),
                 ]}
+                contentStyle={{
+                  backgroundColor: "hsl(var(--card))",
+                  border: "1px solid hsl(var(--border))",
+                  borderRadius: "8px",
+                  color: "hsl(var(--foreground))",
+                  fontSize: "12px",
+                }}
+                labelStyle={{ color: "hsl(var(--foreground))", fontWeight: 600 }}
+                itemStyle={{ color: "hsl(var(--muted-foreground))" }}
               />
-              <Legend />
+              <Legend wrapperStyle={{ fontSize: "12px", color: "hsl(var(--foreground))" }} />
             </PieChart>
           ) : data.chart_type === "line" ? (
             <LineChart data={flatData} margin={{ bottom: 24, left: 10, right: 10 }}>
               <XAxis
                 dataKey="x"
-                tick={{ fontSize: 11 }}
+                tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+                axisLine={{ stroke: "hsl(var(--border))" }}
+                tickLine={{ stroke: "hsl(var(--border))" }}
                 label={
                   data.x_axis_label
-                    ? { value: data.x_axis_label, position: "insideBottom", offset: -12, fontSize: 11 }
+                    ? { value: data.x_axis_label, position: "insideBottom", offset: -12, fontSize: 11 } as LabelProps
                     : undefined
                 }
               />
               <YAxis
-                tick={{ fontSize: 11 }}
+                tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+                axisLine={{ stroke: "hsl(var(--border))" }}
+                tickLine={{ stroke: "hsl(var(--border))" }}
                 label={
                   data.y_axis_label
-                    ? { value: data.y_axis_label, angle: -90, position: "insideLeft", offset: 10, fontSize: 11 }
+                    ? { value: data.y_axis_label, angle: -90, position: "insideLeft", offset: 10, fontSize: 11 } as LabelProps
                     : undefined
                 }
               />
-              <Tooltip />
-              <Legend />
+              <Tooltip
+                contentStyle={{
+                  backgroundColor: "hsl(var(--card))",
+                  border: "1px solid hsl(var(--border))",
+                  borderRadius: "8px",
+                  color: "hsl(var(--foreground))",
+                  fontSize: "12px",
+                }}
+                labelStyle={{ color: "hsl(var(--foreground))", fontWeight: 600 }}
+                itemStyle={{ color: "hsl(var(--muted-foreground))" }}
+                cursor={{ fill: "hsl(var(--muted))", opacity: 0.4 }}
+              />
+              <Legend wrapperStyle={{ fontSize: "12px", color: "hsl(var(--foreground))" }} />
               {data.series.map((s, i) => (
                 <Line
                   key={s.name}
@@ -144,23 +169,38 @@ export default function ChartBlock({ data, isLoading }: Props) {
             <BarChart data={flatData} margin={{ bottom: 24, left: 10, right: 10 }}>
               <XAxis
                 dataKey="x"
-                tick={{ fontSize: 11 }}
+                tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+                axisLine={{ stroke: "hsl(var(--border))" }}
+                tickLine={{ stroke: "hsl(var(--border))" }}
                 label={
                   data.x_axis_label
-                    ? { value: data.x_axis_label, position: "insideBottom", offset: -12, fontSize: 11 }
+                    ? { value: data.x_axis_label, position: "insideBottom", offset: -12, fontSize: 11 } as LabelProps
                     : undefined
                 }
               />
               <YAxis
-                tick={{ fontSize: 11 }}
+                tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+                axisLine={{ stroke: "hsl(var(--border))" }}
+                tickLine={{ stroke: "hsl(var(--border))" }}
                 label={
                   data.y_axis_label
-                    ? { value: data.y_axis_label, angle: -90, position: "insideLeft", offset: 10, fontSize: 11 }
+                    ? { value: data.y_axis_label, angle: -90, position: "insideLeft", offset: 10, fontSize: 11 } as LabelProps
                     : undefined
                 }
               />
-              <Tooltip />
-              <Legend />
+              <Tooltip
+                contentStyle={{
+                  backgroundColor: "hsl(var(--card))",
+                  border: "1px solid hsl(var(--border))",
+                  borderRadius: "8px",
+                  color: "hsl(var(--foreground))",
+                  fontSize: "12px",
+                }}
+                labelStyle={{ color: "hsl(var(--foreground))", fontWeight: 600 }}
+                itemStyle={{ color: "hsl(var(--muted-foreground))" }}
+                cursor={{ fill: "hsl(var(--muted))", opacity: 0.4 }}
+              />
+              <Legend wrapperStyle={{ fontSize: "12px", color: "hsl(var(--foreground))" }} />
               {data.series.map((s, i) => (
                 <Bar key={s.name} dataKey={s.name} fill={COLORS[i % COLORS.length]} />
               ))}

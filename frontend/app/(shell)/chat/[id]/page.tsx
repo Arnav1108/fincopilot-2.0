@@ -34,7 +34,7 @@ export default function ConversationPage({ params }: { params: { id: string } })
   // Ref tracks accumulated content so onDone never has a stale closure
   const streamingContentRef = useRef("")
 
-  const { startStream, isStreaming } = useStream({
+  const { startStream, isStreaming, stop } = useStream({
     onToken: useCallback((token: string) => {
       streamingContentRef.current += token
       setStreamingContent(streamingContentRef.current)
@@ -200,6 +200,7 @@ export default function ConversationPage({ params }: { params: { id: string } })
         )}
         <InputBar
           onSend={handleSend}
+          onStop={stop}
           disabled={isStreaming}
           ingestProgress={ingestProgress}
           streamError={streamError}
