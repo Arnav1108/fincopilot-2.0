@@ -11,6 +11,7 @@ class DocumentFinderInput(BaseModel):
     conversation_id: str
     user_id: str | None = None
     query: str | None = Field(default=None, max_length=300)
+    year: int | None = None
 
 
 class DocumentFinderOutput(BaseModel):

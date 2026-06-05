@@ -19,6 +19,13 @@ import type { ChartData } from "@/lib/types"
 
 const COLORS = ["#2563eb", "#16a34a", "#dc2626", "#d97706", "#7c3aed", "#0891b2"]
 
+function formatPieValue(value: number, yAxisLabel: string): string {
+  if (yAxisLabel?.includes("%")) {
+    return `${value.toFixed(2)}%`
+  }
+  return value.toLocaleString(undefined, { maximumFractionDigits: 2 })
+}
+
 class ChartErrorBoundary extends Component<
   { children: ReactNode },
   { hasError: boolean }
@@ -86,12 +93,19 @@ export default function ChartBlock({ data, isLoading }: Props) {
                 cx="50%"
                 cy="50%"
                 outerRadius={100}
+                label={({ name, value }: { name: string; value: number }) =>
+                  `${name}: ${formatPieValue(value, data.y_axis_label)}`
+                }
               >
                 {pieData.map((_, i) => (
                   <Cell key={i} fill={COLORS[i % COLORS.length]} />
                 ))}
               </Pie>
-              <Tooltip />
+              <Tooltip
+                formatter={(value: number) => [
+                  formatPieValue(value, data.y_axis_label),
+                ]}
+              />
               <Legend />
             </PieChart>
           ) : data.chart_type === "line" ? (

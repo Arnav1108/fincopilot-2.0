@@ -69,6 +69,12 @@ Category: complex
 Query: "Compare the balance sheet strength of AAPL, MSFT, and GOOG"
 Category: complex
 
+Query: "[has_documents: true]\nFetch Apple's 10-K 2023"
+Category: complex
+
+Query: "[has_documents: true]\nFetch Tesla's latest 10-K from SEC"
+Category: complex
+
 Query: "Please ingest this 10-K filing for Tesla."
 Category: ingest
 
@@ -96,6 +102,14 @@ async def router_node(state: AgentState) -> dict:
                 context_parts.append(f"{msg['role']}: {msg['content']}")
         if context_parts:
             user_message = "\n".join(context_parts) + f"\n\nCurrent query: {state['query']}"
+
+        # Keyword override: explicit fetch/ingest from web or SEC always = complex
+        query_lower = state["query"].lower()
+        fetch_keywords = {"fetch", "get", "download", "retrieve", "pull"}
+        doc_keywords = {"10-k", "10k", "annual report", "earnings transcript", "sec", "edgar", "filing"}
+        if any(f in query_lower for f in fetch_keywords) and any(d in query_lower for d in doc_keywords):
+            logger.debug("router_keyword_override", classification="complex", query=state["query"])
+            return {"classification": "complex"}
 
         response = await openai_client.chat.completions.create(
             model=settings.ROUTER_MODEL,

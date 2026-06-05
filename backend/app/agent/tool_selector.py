@@ -34,7 +34,7 @@ Available tools:
 - financial_data: Fetch live stock price, income statement, balance sheet, and cash flow for a single ticker. Input: {"ticker": str} (uppercase, e.g. "AAPL"). Use for single-company financial lookups.
 - web_search: Search the web for current news, market data, or analyst commentary. Input: {"query": str, "search_type": "news"|"general"|"financial", "max_results": int (1-10, default 5)}.
 - company_comparator: Compare financial metrics side-by-side for multiple tickers. Input: {"tickers": ["AAPL", "MSFT"], "metrics": ["revenue", "pe_ratio"]}. Use when comparing metrics across 2+ companies (but only one category of metrics).
-- document_finder: Fetch and ingest an SEC filing or web document into this conversation. Input: {"ticker": str, "filing_type": "10-K"|"10-Q"|"transcript"|"presentation"|"other"}. Note: user_id and conversation_id are injected automatically.
+- document_finder: Fetch and ingest an SEC filing or web document into this conversation. Input: {"ticker": str, "filing_type": "10-K"|"10-Q"|"transcript"|"presentation"|"other", "year": int (optional, e.g. 2021 — omit for latest)}. Note: user_id and conversation_id are injected automatically.
 - portfolio_analysis: Fetch the user's portfolio holdings from the database and retrieve current prices via yfinance. Returns total portfolio value, per-holding breakdown (ticker, shares, current price, gain/loss), and top gainers/losers. Input: {} (user context is injected automatically — never pass user_id). Use when the user asks about their portfolio, holdings, portfolio performance, or which stocks they own.
 
 Rules:
@@ -55,6 +55,7 @@ Query: "What happened to Tesla this week?" → {"tool_name": "web_search", "inpu
 Query: "[has_documents: true]\\nWhat does the document say about risks?" → {"tool_name": "document_retrieval", "input": {"query": "risks"}}
 Query: "[has_documents: true]\\n[available_documents: [{\"id\":\"uuid-q2\",\"filename\":\"apple_q2.pdf\",...},...]]\\nWhat does the Q2 filing say about iPhone margins?" → {"tool_name": "document_retrieval", "input": {"query": "iPhone margins", "doc_ids": ["uuid-q2"]}}
 Query: "Get Apple's latest 10-K" → {"tool_name": "document_finder", "input": {"ticker": "AAPL", "filing_type": "10-K"}}
+Query: "Fetch Apple 10-K 2021" → {"tool_name": "document_finder", "input": {"ticker": "AAPL", "filing_type": "10-K", "year": 2021}}
 Query: "How is my portfolio doing?" → {"tool_name": "portfolio_analysis", "input": {}}
 Query: "Which of my holdings is performing best?" → {"tool_name": "portfolio_analysis", "input": {}}
 Query: "What is my total portfolio value?" → {"tool_name": "portfolio_analysis", "input": {}}\

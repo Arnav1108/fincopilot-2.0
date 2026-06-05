@@ -21,7 +21,7 @@ Available tools:
 - financial_data: Fetch live stock price, income statement, balance sheet, and cash flow for a single ticker. Input: {"ticker": str} (uppercase, e.g. "AAPL").
 - web_search: Search the web for current news, market data, or analyst commentary. Input: {"query": str, "search_type": "news"|"general"|"financial", "max_results": int (1-10, default 5)}.
 - company_comparator: Compare financial metrics side-by-side for multiple tickers. Input: {"tickers": ["AAPL", "MSFT"], "metrics": ["revenue", "pe_ratio", "debt_to_equity"]}.
-- document_finder: Fetch and ingest an SEC filing or web document into this conversation. Input: {"ticker": str, "filing_type": "10-K"|"10-Q"|"transcript"|"presentation"|"other"}. Note: user_id and conversation_id are injected automatically.
+- document_finder: Fetch and ingest an SEC filing or web document into this conversation. Input: {"ticker": str, "filing_type": "10-K"|"10-Q"|"transcript"|"presentation"|"other", "year": int (optional, e.g. 2021 — omit for latest)}. Note: user_id and conversation_id are injected automatically.
 - portfolio_analysis: Fetch the user's portfolio holdings and current prices. Input: {} (user_id is injected automatically — never include it). Use when the user asks about their portfolio performance or holdings.
 
 IMPORTANT rules:

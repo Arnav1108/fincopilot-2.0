@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { useParams, usePathname, useRouter } from "next/navigation"
-import { Brain, Briefcase, Plus, Settings } from "lucide-react"
+import { /* Brain, */ /* Briefcase, */ Plus, Settings } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useConversations } from "@/hooks/useConversations"
 import ConversationGroup from "./ConversationGroup"
@@ -112,6 +112,7 @@ export default function Sidebar() {
 
         {/* Footer */}
         <div className="px-3 py-4 flex flex-col gap-1">
+          {/* Portfolio nav — disabled; restore by uncommenting
           <button
             onClick={() => router.push("/portfolio")}
             className={cn(
@@ -125,6 +126,8 @@ export default function Sidebar() {
             <Briefcase size={16} />
             <span>Portfolio</span>
           </button>
+          */}
+          {/* Memories nav — disabled; restore by uncommenting
           <button
             onClick={() => router.push("/memories")}
             className={cn(
@@ -138,6 +141,7 @@ export default function Sidebar() {
             <Brain size={16} />
             <span>Memories</span>
           </button>
+          */}
           <button
             onClick={() => setSettingsOpen(true)}
             className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"

@@ -106,14 +106,16 @@ class DocumentFinderTool(BaseTool[DocumentFinderInput, DocumentFinderOutput]):
 
         # Duplicate check before any external calls
         async with AsyncSessionFactory() as db:
-            result = await db.execute(
-                select(Document).where(
-                    Document.ticker == resolved_ticker,
-                    Document.doc_type == str(doc_type.value),
-                    Document.status == DocumentStatus.ready,
-                    Document.conversation_id == uuid.UUID(input.conversation_id),
-                )
-            )
+            dup_filters = [
+                Document.ticker == resolved_ticker,
+                Document.doc_type == str(doc_type.value),
+                Document.status == DocumentStatus.ready,
+                Document.conversation_id == uuid.UUID(input.conversation_id),
+            ]
+            if input.year is not None:
+                from sqlalchemy import extract
+                dup_filters.append(extract("year", Document.filing_date) == input.year)
+            result = await db.execute(select(Document).where(*dup_filters))
             existing = result.scalar_one_or_none()
             if existing is not None:
                 logger.debug("document_finder_duplicate", ticker=resolved_ticker)
@@ -145,9 +147,22 @@ class DocumentFinderTool(BaseTool[DocumentFinderInput, DocumentFinderOutput]):
             accessions = filings.get("accessionNumber", [])
             report_dates = filings.get("reportDate", [])
 
-            idx = next((i for i, f in enumerate(forms) if f == input.filing_type), None)
-            if idx is None:
-                raise ToolNotFoundError(f"No {input.filing_type} filing found for {ticker!r}")
+            if input.year is not None:
+                idx = next(
+                    (
+                        i for i, f in enumerate(forms)
+                        if f == input.filing_type and report_dates[i].startswith(str(input.year))
+                    ),
+                    None,
+                )
+                if idx is None:
+                    raise ToolNotFoundError(
+                        f"No {input.filing_type} filing found for {ticker} for year {input.year}"
+                    )
+            else:
+                idx = next((i for i, f in enumerate(forms) if f == input.filing_type), None)
+                if idx is None:
+                    raise ToolNotFoundError(f"No {input.filing_type} filing found for {ticker!r}")
 
             raw_acc = accessions[idx]
             acc_clean = raw_acc.replace("-", "")
@@ -194,7 +209,7 @@ class DocumentFinderTool(BaseTool[DocumentFinderInput, DocumentFinderOutput]):
         with _os.fdopen(tmp_fd, "wb") as tmp:
             tmp.write(content)
 
-        return await self._ingest_and_wait(input, filing_url, tmp_path, file_ext, ticker)
+        return await self._ingest_and_wait(input, filing_url, tmp_path, file_ext, ticker, period=period)
 
     # ── Web (Tavily) route ─────────────────────────────────────────────────────
 
@@ -245,12 +260,21 @@ class DocumentFinderTool(BaseTool[DocumentFinderInput, DocumentFinderOutput]):
         tmp_path: str,
         file_type: str,
         ticker: str,
+        period: str = "",
     ) -> DocumentFinderOutput:
         doc_type = _DOC_TYPE_MAP.get(input.filing_type, DocumentType.other)
         try:
             user_uuid = uuid.UUID(input.user_id) if input.user_id else uuid.uuid4()
         except ValueError:
             user_uuid = uuid.uuid4()
+
+        from datetime import date as _date
+        parsed_filing_date: _date | None = None
+        if period:
+            try:
+                parsed_filing_date = _date.fromisoformat(period)
+            except ValueError:
+                pass
 
         async with AsyncSessionFactory() as db:
             async with db.begin():
@@ -261,6 +285,7 @@ class DocumentFinderTool(BaseTool[DocumentFinderInput, DocumentFinderOutput]):
                     source_url=source_url,
                     doc_type=str(doc_type.value),
                     ticker=ticker,
+                    filing_date=parsed_filing_date,
                     status=DocumentStatus.pending,
                 )
                 db.add(doc)

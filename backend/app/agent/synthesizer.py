@@ -198,8 +198,8 @@ async def synthesizer_node(state: AgentState) -> dict:
             lines: list[str] = ["Tool Results:"]
             for envelope in successful.values():
                 data_str = json.dumps(envelope["data"], separators=(",", ":"))
-                if len(data_str) > 500:
-                    data_str = data_str[:500] + "..."
+                if len(data_str) > 4000:
+                    data_str = data_str[:4000] + "..."
                 lines.append(f"{envelope['tool_name']} result: {data_str}")
             for envelope in failed.values():
                 lines.append(f"{envelope['tool_name']} failed: {envelope['error']}")
