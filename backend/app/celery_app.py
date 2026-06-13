@@ -15,4 +15,8 @@ celery_app.conf.update(
     result_serializer="json",
     timezone="UTC",
     enable_utc=True,
+    # Without this, Celery defaults to os.cpu_count() prefork workers. On
+    # Railway that reads the host's core count (e.g. 48), forking enough
+    # processes to OOM-kill the container seconds after startup.
+    worker_concurrency=2,
 )
