@@ -301,7 +301,7 @@ cd backend
 python -m venv venv
 # Windows: venv\Scripts\activate
 source venv/bin/activate
-pip install -r requirements.txt
+pip install -e .[dev]
 
 alembic upgrade head
 ```

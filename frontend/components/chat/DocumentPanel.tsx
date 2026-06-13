@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { useAuth } from "@clerk/nextjs"
-import { ChevronLeft, ChevronRight, PanelRight } from "lucide-react"
+import { PanelRight } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { getConversationDocuments } from "@/lib/api"
 import type { DocumentRead } from "@/lib/types"

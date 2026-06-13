@@ -92,7 +92,7 @@ async def upload_document(
         document_id=str(doc.id),
         filename=doc.filename,
         user_id=str(user.id),
-        file_size_bytes=len(pdf_bytes),
+        file_size_bytes=len(file_bytes),
     )
 
     return JSONResponse(
