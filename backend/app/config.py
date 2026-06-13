@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
     CLERK_WEBHOOK_SECRET: str = ""
     APP_ENV: str = "development"
-    ALLOWED_ORIGINS: list[str] = ["http://localhost:3000"]
+    ALLOWED_ORIGINS: list[str] = ["http://localhost:3000", "https://fincopilot-2-0.vercel.app"]
     MAX_UPLOAD_BYTES: int = 50_000_000
     TAVILY_API_KEY: str = ""
     BRAVE_SEARCH_API_KEY: str = ""
