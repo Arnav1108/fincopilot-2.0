@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     MEMORY_EXTRACTION_MODEL: str = "gpt-4o-mini"
     USER_MEMORY_MAX_COUNT: int = 20
     HYBRID_SEARCH_ALPHA: float = 0.7
+    # Cross-encoder reranking pulls torch + the model into the API process. On a
+    # 1GB container that OOM-kills uvicorn, so it's off by default; retrieval falls
+    # back to hybrid (vector + BM25) ranking. Re-enable once the container has RAM.
+    RERANK_ENABLED: bool = False
 
     @field_validator("ALLOWED_ORIGINS", mode="before")
     @classmethod

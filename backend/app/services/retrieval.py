@@ -247,6 +247,11 @@ class RetrievalService:
         if not candidates:
             return candidates[:top_k]
 
+        # When disabled, skip the cross-encoder entirely (avoids importing torch,
+        # which OOM-kills the API on a 1GB container) and keep hybrid-ranked order.
+        if not settings.RERANK_ENABLED:
+            return candidates[:top_k]
+
         try:
             reranked = await asyncio.to_thread(_rerank_sync, candidates, query, top_k)
             logger.debug(
