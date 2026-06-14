@@ -60,6 +60,21 @@ def _is_document_specific(query: str) -> bool:
     return any(kw in q for kw in _DOCUMENT_KEYWORDS)
 
 
+# Keywords that signal the user explicitly wants a chart/graph. Chart extraction
+# (an extra LLM call) runs only when the query contains one of these — otherwise
+# responses stay text-only.
+_CHART_KEYWORDS = frozenset([
+    "chart", "graph", "plot", "visualise", "visualize",
+    "visualisation", "visualization", "diagram", "bar chart",
+    "line chart", "pie chart",
+])
+
+
+def _chart_requested(query: str) -> bool:
+    q = query.lower()
+    return any(kw in q for kw in _CHART_KEYWORDS)
+
+
 def _doc_label(metadata: dict | None) -> str:
     """Return a display label for a chunk's source document.
 
@@ -234,12 +249,15 @@ async def synthesizer_node(state: AgentState) -> dict:
 
         final_output = "".join(tokens)
 
-        # Chart extraction: only for tool-result paths, never for RAG or LLM-only
+        # Chart extraction: only for tool-result paths, and only when the user
+        # explicitly asked for a chart/graph. Never for RAG or LLM-only.
         chart_data: dict | None = None
-        if successful:
-            chart_data = await _extract_chart_data(successful, model, logger)
-        else:
+        if not successful:
             logger.debug("chart_extraction_skipped", reason="no_tool_results")
+        elif not _chart_requested(state["query"]):
+            logger.debug("chart_extraction_skipped", reason="not_requested")
+        else:
+            chart_data = await _extract_chart_data(successful, model, logger)
 
         logger.debug(
             "synthesizer_completed",

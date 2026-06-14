@@ -196,11 +196,31 @@ async def test_synthesizer_node_skips_chart_for_llm_only():
     assert mock_client.chat.completions.create.call_count == 1
 
 
-async def test_synthesizer_node_includes_chart_data_for_tool_results():
-    """Tool-result path must call extraction and return chart_data in state."""
+async def test_synthesizer_node_skips_chart_when_not_requested():
+    """Tool-result path must skip extraction when the query has no chart keyword."""
     state = _make_state(
         reranked_chunks=[],
         tool_results={"step_0": _ok_envelope()},
+        query="What was Apple's revenue for the last 4 quarters?",
+    )
+
+    with patch("app.agent.synthesizer.openai_client") as mock_client:
+        mock_client.chat.completions.create = AsyncMock(
+            return_value=_fake_text_stream()
+        )
+        result = await synthesizer_node(state)
+
+    assert result.get("chart_data") is None
+    # Only the streaming text call — no second extraction call
+    assert mock_client.chat.completions.create.call_count == 1
+
+
+async def test_synthesizer_node_includes_chart_data_for_tool_results():
+    """Tool-result path must call extraction and return chart_data when a chart is requested."""
+    state = _make_state(
+        reranked_chunks=[],
+        tool_results={"step_0": _ok_envelope()},
+        query="Show me a bar chart of Apple's revenue for the last 4 quarters",
     )
 
     json_resp = _make_json_response(_bar_chart_payload())
@@ -223,6 +243,7 @@ async def test_synthesizer_node_chart_data_none_when_extraction_fails():
     state = _make_state(
         reranked_chunks=[],
         tool_results={"step_0": _ok_envelope()},
+        query="Plot Apple's revenue as a chart",
     )
 
     with patch("app.agent.synthesizer.openai_client") as mock_client:
@@ -240,6 +261,7 @@ async def test_synthesizer_node_chart_data_none_when_type_is_null():
     state = _make_state(
         reranked_chunks=[],
         tool_results={"step_0": _ok_envelope()},
+        query="Show me a chart of Apple's revenue",
     )
 
     json_resp = _make_json_response({"chart_type": None})
