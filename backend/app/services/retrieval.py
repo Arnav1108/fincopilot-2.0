@@ -17,13 +17,22 @@ logger = structlog.get_logger(__name__)
 _CROSS_ENCODER_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 _RERANK_CANDIDATE_MULTIPLIER = 3
 
-try:
-    from sentence_transformers import CrossEncoder as _CrossEncoderClass  # type: ignore[import-untyped]
+_cross_encoder = None
+_cross_encoder_load_failed = False
 
-    _cross_encoder = _CrossEncoderClass(_CROSS_ENCODER_MODEL)
-except Exception as _ce_load_err:
-    _cross_encoder = None
-    logger.warning("reranker_load_failed", model=_CROSS_ENCODER_MODEL, error=str(_ce_load_err))
+
+def _get_cross_encoder():
+    """Lazily load and cache the cross-encoder model on first use."""
+    global _cross_encoder, _cross_encoder_load_failed
+    if _cross_encoder is None and not _cross_encoder_load_failed:
+        try:
+            from sentence_transformers import CrossEncoder  # type: ignore[import-untyped]
+
+            _cross_encoder = CrossEncoder(_CROSS_ENCODER_MODEL)
+        except Exception as exc:
+            _cross_encoder_load_failed = True
+            logger.warning("reranker_load_failed", model=_CROSS_ENCODER_MODEL, error=str(exc))
+    return _cross_encoder
 
 
 def _rerank_sync(chunks: list[ChunkResult], query: str, top_k: int) -> list[ChunkResult]:
@@ -31,8 +40,11 @@ def _rerank_sync(chunks: list[ChunkResult], query: str, top_k: int) -> list[Chun
 
     Raises on any failure so the caller can catch and fall back.
     """
+    cross_encoder = _get_cross_encoder()
+    if cross_encoder is None:
+        raise RuntimeError("reranker unavailable")
     pairs = [(query, c.content) for c in chunks]
-    scores = _cross_encoder.predict(pairs)  # type: ignore[union-attr]
+    scores = cross_encoder.predict(pairs)
     ranked = sorted(zip(scores, chunks), key=lambda x: x[0], reverse=True)
     return [c for _, c in ranked[:top_k]]
 
@@ -92,8 +104,8 @@ class RetrievalService:
         )
         query_vec: list[float] = response.data[0].embedding
 
-        # Fetch extra candidates when a reranker is ready; otherwise just top_k.
-        candidate_k = top_k * _RERANK_CANDIDATE_MULTIPLIER if _cross_encoder is not None else top_k
+        # Fetch extra candidates so the reranker has a pool to work with.
+        candidate_k = top_k * _RERANK_CANDIDATE_MULTIPLIER
 
         distance_expr = DocumentChunk.embedding.cosine_distance(query_vec).label("distance")
 
@@ -232,7 +244,7 @@ class RetrievalService:
         self, candidates: list[ChunkResult], query: str, top_k: int
     ) -> list[ChunkResult]:
         """Rerank *candidates* with the cross-encoder; fall back to cosine order on failure."""
-        if not candidates or _cross_encoder is None:
+        if not candidates:
             return candidates[:top_k]
 
         try:
