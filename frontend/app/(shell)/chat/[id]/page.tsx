@@ -11,14 +11,14 @@ import InputBar from "@/components/chat/InputBar"
 import DocumentIngestionBanner from "@/components/chat/DocumentIngestionBanner"
 import ConfirmationBanner from "@/components/chat/ConfirmationBanner"
 import DocumentPanel from "@/components/chat/DocumentPanel"
+import { API_BASE, DEFAULT_MODEL } from "@/lib/api"
+import { localId } from "@/lib/utils"
 import type { ChartData, ConfirmationRequired, IngestProgress, Source, ToolCall } from "@/lib/types"
-
-const BASE = process.env.NEXT_PUBLIC_API_URL
 
 export default function ConversationPage({ params }: { params: { id: string } }) {
   const id = params.id
   const { getToken } = useAuth()
-  const { messages, isLoading, notFound, load, addMessage } = useMessages()
+  const { messages, isLoading, notFound, error: loadError, load, addMessage } = useMessages()
   const { bumpToTop, refresh } = useConversations()
 
   const [streamingContent, setStreamingContent] = useState("")
@@ -30,9 +30,22 @@ export default function ConversationPage({ params }: { params: { id: string } })
   const [isPanelOpen, setIsPanelOpen] = useState(true)
   const [confirmationRequest, setConfirmationRequest] = useState<ConfirmationRequired | null>(null)
   const [streamingChartData, setStreamingChartData] = useState<ChartData | null>(null)
+  // Bumped whenever the backend may have attached new documents, so the panel re-fetches
+  const [docRefreshKey, setDocRefreshKey] = useState(0)
 
   // Ref tracks accumulated content so onDone never has a stale closure
   const streamingContentRef = useRef("")
+
+  const clearStreamingState = useCallback(() => {
+    streamingContentRef.current = ""
+    setStreamingContent("")
+    setAgentStatus(null)
+    setToolCall(null)
+    setStreamingSources([])
+    setIngestProgress(null)
+    setConfirmationRequest(null)
+    setStreamingChartData(null)
+  }, [])
 
   const { startStream, isStreaming, stop } = useStream({
     onToken: useCallback((token: string) => {
@@ -52,31 +65,28 @@ export default function ConversationPage({ params }: { params: { id: string } })
 
     onDone: useCallback(
       async (_messageId: string | null) => {
-        streamingContentRef.current = ""
-        setStreamingContent("")
-        setAgentStatus(null)
-        setToolCall(null)
-        setIngestProgress(null)
-        setConfirmationRequest(null)
-        setStreamingChartData(null)
         bumpToTop(id)
-        await load(id)
+        // Reload first, clear after — the streaming bubble stays rendered until
+        // the settled message is in place, so the answer never blinks out.
+        await load(id, { silent: true })
+        clearStreamingState()
+        setDocRefreshKey((k) => k + 1)
         await refresh()
       },
-      [bumpToTop, id, load, refresh],
+      [bumpToTop, id, load, refresh, clearStreamingState],
     ),
 
-    onError: useCallback((err: Error) => {
-      console.error("[useStream] error", err)
-      setStreamError(err.message)
-      setAgentStatus(null)
-      setToolCall(null)
-      setIngestProgress(null)
-      setConfirmationRequest(null)
-      setStreamingChartData(null)
-      streamingContentRef.current = ""
-      setStreamingContent("")
-    }, []),
+    onError: useCallback(
+      async (err: Error) => {
+        console.error("[useStream] error", err)
+        setStreamError(err.message)
+        // The backend may have persisted a partial or complete reply before the
+        // stream broke — re-fetch so whatever was saved is shown.
+        await load(id, { silent: true })
+        clearStreamingState()
+      },
+      [id, load, clearStreamingState],
+    ),
 
     onIngestProgress: useCallback((progress: IngestProgress) => {
       setIngestProgress(progress)
@@ -85,6 +95,7 @@ export default function ConversationPage({ params }: { params: { id: string } })
     onIngestComplete: useCallback((_count: number) => {
       // Ingestion done; Phase 2 (agent) begins — clear progress indicator
       setIngestProgress(null)
+      setDocRefreshKey((k) => k + 1)
     }, []),
 
     onToolCall: useCallback((tc: ToolCall) => {
@@ -107,23 +118,62 @@ export default function ConversationPage({ params }: { params: { id: string } })
   const sendConfirmation = useCallback(
     async (answer: "yes" | "no", token: string) => {
       setConfirmationRequest(null)
-      const authToken = await getToken()
-      if (!authToken) return
-      const body = new FormData()
-      body.append("message", `CONFIRM:${answer}:${token}`)
-      body.append("model", "gpt-4o")
-      fetch(`${BASE}/api/v1/conversations/${id}/stream`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${authToken}` },
-        body,
-      }).catch(() => {})
+      try {
+        const authToken = await getToken()
+        if (!authToken) throw new Error("Not authenticated.")
+        const body = new FormData()
+        body.append("message", `CONFIRM:${answer}:${token}`)
+        body.append("model", DEFAULT_MODEL)
+        const res = await fetch(`${API_BASE}/api/v1/conversations/${id}/stream`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${authToken}` },
+          body,
+        })
+        if (!res.ok) throw new Error(`Confirmation failed (${res.status}).`)
+        // The response is a short SSE ack stream (confirmed + done). Drain it
+        // fully so the backend generator runs to completion.
+        await res.text().catch(() => {})
+      } catch (e) {
+        setStreamError(
+          e instanceof Error ? e.message : "Failed to send confirmation.",
+        )
+      }
     },
     [getToken, id],
   )
 
   useEffect(() => {
     load(id)
-  }, [id, load])
+    return () => {
+      // Abort any in-flight stream before switching conversations or
+      // unmounting — otherwise it keeps streaming in the background and its
+      // stale onDone closure reloads the *previous* conversation.
+      stop()
+      clearStreamingState()
+      setStreamError(null)
+    }
+  }, [id, load, stop, clearStreamingState])
+
+  const handleStop = useCallback(async () => {
+    const partial = streamingContentRef.current
+    stop()
+    // The backend usually persists the assistant message even when the client
+    // aborts — reload to pick it up. If it didn't, keep the partial text as a
+    // local settled message instead of silently discarding it.
+    const fresh = await load(id, { silent: true })
+    const lastIsAssistant =
+      fresh != null && fresh.length > 0 && fresh[fresh.length - 1].role === "assistant"
+    if (partial && !lastIsAssistant) {
+      addMessage({
+        id: localId(),
+        conversation_id: id,
+        role: "assistant",
+        content: partial,
+        created_at: new Date().toISOString(),
+      })
+    }
+    clearStreamingState()
+  }, [stop, load, id, addMessage, clearStreamingState])
 
   const handleSend = useCallback(
     async (message: string, files: File[]) => {
@@ -134,23 +184,17 @@ export default function ConversationPage({ params }: { params: { id: string } })
       setStreamError(null)
 
       addMessage({
-        id: crypto.randomUUID(),
+        id: localId(),
         conversation_id: id,
         role: "user",
         content: message,
         created_at: new Date().toISOString(),
       })
-      streamingContentRef.current = ""
-      setStreamingContent("")
-      setAgentStatus(null)
-      setToolCall(null)
-      setStreamingSources([])
-      setIngestProgress(null)
-      setStreamingChartData(null)
+      clearStreamingState()
 
       await startStream(id, message, token, files.length ? files : undefined)
     },
-    [getToken, addMessage, id, startStream],
+    [getToken, addMessage, id, startStream, clearStreamingState],
   )
 
   if (notFound) {
@@ -160,6 +204,21 @@ export default function ConversationPage({ params }: { params: { id: string } })
         <Link href="/chat" className="text-sm text-muted-foreground underline">
           Back to chat
         </Link>
+      </div>
+    )
+  }
+
+  if (loadError && messages.length === 0) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center gap-3">
+        <p className="text-foreground text-sm">{loadError}</p>
+        <button
+          type="button"
+          onClick={() => load(id)}
+          className="rounded-md border border-border px-3 py-1.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+        >
+          Retry
+        </button>
       </div>
     )
   }
@@ -200,7 +259,7 @@ export default function ConversationPage({ params }: { params: { id: string } })
         )}
         <InputBar
           onSend={handleSend}
-          onStop={stop}
+          onStop={handleStop}
           disabled={isStreaming}
           ingestProgress={ingestProgress}
           streamError={streamError}
@@ -210,6 +269,7 @@ export default function ConversationPage({ params }: { params: { id: string } })
         conversationId={id}
         isOpen={isPanelOpen}
         onToggle={() => setIsPanelOpen((v) => !v)}
+        refreshKey={docRefreshKey}
       />
     </div>
   )

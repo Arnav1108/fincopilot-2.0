@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef } from "react"
+import { useEffect, useRef, useState } from "react"
 import MessageBubble from "./MessageBubble"
 import type { ChartData, MessageRead, Source, ToolCall } from "@/lib/types"
 
@@ -28,6 +28,19 @@ export default function MessageList({
   const containerRef = useRef<HTMLDivElement>(null)
   const shouldAutoScrollRef = useRef(true)
 
+  // Screen-reader announcement: "Response complete" once a stream finishes
+  const wasStreamingRef = useRef(false)
+  const [announcement, setAnnouncement] = useState("")
+  useEffect(() => {
+    if (isStreaming) {
+      wasStreamingRef.current = true
+      setAnnouncement("")
+    } else if (wasStreamingRef.current) {
+      wasStreamingRef.current = false
+      setAnnouncement("Response complete")
+    }
+  }, [isStreaming])
+
   const handleScroll = () => {
     const el = containerRef.current
     if (!el) return
@@ -38,9 +51,12 @@ export default function MessageList({
     if (!shouldAutoScrollRef.current) return
     const el = containerRef.current
     if (el) el.scrollTop = el.scrollHeight
-  }, [messages, streamingContent])
+  }, [messages, streamingContent, streamingChartData, agentStatus, toolCall])
 
-  const isEmpty = messages.length === 0 && !isStreaming
+  // Keep the bubble rendered while content exists even after the stream ends,
+  // so the finished answer doesn't blink out before the reloaded messages land.
+  const showStreamingBubble = isStreaming || streamingContent.length > 0
+  const isEmpty = messages.length === 0 && !showStreamingBubble
 
   return (
     <div
@@ -49,6 +65,11 @@ export default function MessageList({
       onScroll={handleScroll}
       className="flex-1 overflow-y-auto [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border [&::-webkit-scrollbar-track]:transparent"
     >
+      {/* Live region: announces agent progress and completion to screen readers */}
+      <div aria-live="polite" role="status" className="sr-only">
+        {isStreaming ? agentStatus ?? "Assistant is responding" : announcement}
+      </div>
+
       {isEmpty ? (
         <div className="h-full flex items-center justify-center px-4">
           <p className="text-muted-foreground text-sm text-center">
@@ -61,7 +82,7 @@ export default function MessageList({
             <MessageBubble key={msg.id} message={msg} />
           ))}
 
-          {isStreaming && (
+          {showStreamingBubble && (
             <MessageBubble
               key={STREAMING_ID}
               message={{

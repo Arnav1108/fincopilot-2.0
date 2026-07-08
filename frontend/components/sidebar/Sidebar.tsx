@@ -35,7 +35,7 @@ export default function Sidebar() {
   const params = useParams()
 
   const activeId = typeof params?.id === "string" ? params.id : undefined
-  const { conversations, isLoading, create, rename, remove } = useConversations()
+  const { conversations, isLoading, error, create, rename, remove, refresh } = useConversations()
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
@@ -155,6 +155,22 @@ export default function Sidebar() {
           {(() => {
             if (isLoading) {
               return <p className="px-3 py-2 text-xs text-muted-foreground">Loading…</p>
+            }
+            if (error && conversations.length === 0) {
+              return (
+                <div className="flex flex-col items-start gap-2 px-3 py-2">
+                  <p className="text-xs text-muted-foreground">
+                    Couldn&apos;t load conversations.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => refresh()}
+                    className="rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                  >
+                    Retry
+                  </button>
+                </div>
+              )
             }
             const filteredConversations = searchQuery.trim()
               ? conversations.filter((c) => c.title.toLowerCase().includes(searchQuery.toLowerCase()))

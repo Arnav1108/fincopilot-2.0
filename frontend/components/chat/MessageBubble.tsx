@@ -1,14 +1,25 @@
 "use client"
 
-import { useState } from "react"
+import { memo, useState } from "react"
+import dynamic from "next/dynamic"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { cn } from "@/lib/utils"
 import type { ChartData, MessageRead, Source, ToolCall } from "@/lib/types"
 import AgentStatus from "./AgentStatus"
-import ChartBlock from "./ChartBlock"
 import SourceList from "./SourceList"
-import ComparisonTable, { hasMarkdownTable } from "./ComparisonTable"
+
+// Recharts is heavy and charts are rare (opt-in since 75845f0) — load it only
+// when a message actually has chart data.
+const ChartBlock = dynamic(() => import("./ChartBlock"), {
+  ssr: false,
+  loading: () => (
+    <div className="mt-3 animate-pulse rounded-lg border border-border bg-muted/20 p-4">
+      <div className="mb-3 h-4 w-40 rounded bg-muted" />
+      <div className="min-h-[200px] rounded bg-muted" />
+    </div>
+  ),
+})
 
 // ── RAG badge ─────────────────────────────────────────────────────────────────
 
@@ -16,10 +27,6 @@ interface RagBadgeProps {
   ragUsed: boolean
   relevanceScore?: number | null
   chunkIds?: string[] | null
-}
-
-function ragScoreColor(_score: number): string {
-  return "text-muted-foreground bg-muted/60"
 }
 
 function RagBadge({ ragUsed, relevanceScore, chunkIds }: RagBadgeProps) {
@@ -46,7 +53,7 @@ function RagBadge({ ragUsed, relevanceScore, chunkIds }: RagBadgeProps) {
         onClick={() => hasChunks && setExpanded((v) => !v)}
         className={cn(
           "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium transition-colors",
-          ragScoreColor(score),
+          "text-muted-foreground bg-muted/60",
           hasChunks && "cursor-pointer hover:opacity-80",
         )}
         aria-expanded={hasChunks ? expanded : undefined}
@@ -81,6 +88,42 @@ function RagBadge({ ragUsed, relevanceScore, chunkIds }: RagBadgeProps) {
   )
 }
 
+// ── table cell styling ────────────────────────────────────────────────────────
+
+function nodeText(node: React.ReactNode): string {
+  if (typeof node === "string" || typeof node === "number") return String(node)
+  if (Array.isArray(node)) return node.map(nodeText).join("")
+  return ""
+}
+
+// $1,234.56 / +5.2% / -3.1 — an explicit sign or unit, not a bare year
+const NUMERIC_CELL = /^[+-]?[$€£]?[\d,]+(\.\d+)?%?$/
+
+function TableCell({ children }: { children?: React.ReactNode }) {
+  const text = nodeText(children).trim()
+  const isNumeric = NUMERIC_CELL.test(text)
+  // Colorize only explicitly signed values — the sign itself remains the
+  // non-color channel (WCAG 1.4.1), and plain years/counts stay neutral.
+  const signColor = isNumeric
+    ? text.startsWith("+")
+      ? "text-green-600 dark:text-green-500"
+      : text.startsWith("-")
+        ? "text-red-600 dark:text-red-500"
+        : ""
+    : ""
+  return (
+    <td
+      className={cn(
+        "border border-border px-2 py-1",
+        isNumeric && "text-right font-mono",
+        signColor,
+      )}
+    >
+      {children}
+    </td>
+  )
+}
+
 // ── MessageBubble ─────────────────────────────────────────────────────────────
 
 interface Props {
@@ -92,7 +135,7 @@ interface Props {
   streamingChartData?: ChartData | null
 }
 
-export default function MessageBubble({
+function MessageBubble({
   message,
   agentStatus,
   toolCall,
@@ -102,9 +145,7 @@ export default function MessageBubble({
 }: Props) {
   const isUser = message.role === "user"
   const isEmpty = message.content === ""
-  const hasSources = !isStreaming && sources && sources.length > 0
-  const showTable =
-    !isUser && !isStreaming && !isEmpty && hasMarkdownTable(message.content)
+  const hasSources = sources != null && sources.length > 0
 
   // Show RAG badge on settled assistant messages that have the field set
   const showRagBadge =
@@ -130,9 +171,7 @@ export default function MessageBubble({
       >
         {isEmpty
           ? "…"
-          : showTable
-            ? <ComparisonTable content={message.content} />
-            : (
+          : (
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
                 components={{
@@ -177,7 +216,7 @@ export default function MessageBubble({
                       text-muted-foreground italic">{children}</blockquote>
                   ),
                   table: ({ children }) => (
-                    <div className="mb-2 overflow-x-auto">
+                    <div className="mb-2 overflow-x-auto rounded-lg border border-border">
                       <table className="w-full text-sm border-collapse">{children}</table>
                     </div>
                   ),
@@ -185,9 +224,7 @@ export default function MessageBubble({
                     <th className="border border-border px-2 py-1 text-left
                       font-semibold bg-muted">{children}</th>
                   ),
-                  td: ({ children }) => (
-                    <td className="border border-border px-2 py-1">{children}</td>
-                  ),
+                  td: ({ children }) => <TableCell>{children}</TableCell>,
                   strong: ({ children }) => (
                     <strong className="font-semibold">{children}</strong>
                   ),
@@ -200,7 +237,7 @@ export default function MessageBubble({
       </div>
 
       {agentStatus && isEmpty && <AgentStatus node={agentStatus} toolCall={toolCall ?? undefined} />}
-      {hasSources && <SourceList sources={sources!} />}
+      {hasSources && <SourceList sources={sources} />}
 
       {showRagBadge && (
         <RagBadge
@@ -221,3 +258,8 @@ export default function MessageBubble({
     </div>
   )
 }
+
+// Memoized: settled bubbles receive referentially stable props, so per-token
+// re-renders of the page no longer re-parse every message's markdown. The
+// streaming bubble gets a fresh message object each render and updates as usual.
+export default memo(MessageBubble)

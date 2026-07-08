@@ -48,19 +48,9 @@ class ChartErrorBoundary extends Component<
 
 interface Props {
   data?: ChartData
-  isLoading?: boolean
 }
 
-export default function ChartBlock({ data, isLoading }: Props) {
-  if (isLoading) {
-    return (
-      <div className="mt-3 animate-pulse rounded-lg border border-border bg-muted/20 p-4">
-        <div className="mb-3 h-4 w-40 rounded bg-muted" />
-        <div className="min-h-[200px] rounded bg-muted" />
-      </div>
-    )
-  }
-
+export default function ChartBlock({ data }: Props) {
   if (!data) return null
 
   // Pivot series format → flat record array for line/bar: [{x, seriesName: value, ...}]

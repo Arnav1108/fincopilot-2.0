@@ -11,6 +11,8 @@ interface Props {
   conversationId: string
   isOpen: boolean
   onToggle: () => void
+  /** Bump to force a re-fetch — e.g. after files finish ingesting mid-conversation. */
+  refreshKey?: number
 }
 
 const STATUS_CLASSES: Record<DocumentRead["status"], string> = {
@@ -20,23 +22,28 @@ const STATUS_CLASSES: Record<DocumentRead["status"], string> = {
   failed: "bg-red-500/20 text-red-400 border border-red-500/30",
 }
 
-export default function DocumentPanel({ conversationId, isOpen, onToggle }: Props) {
+export default function DocumentPanel({ conversationId, isOpen, onToggle, refreshKey }: Props) {
   const { getToken } = useAuth()
   const [documents, setDocuments] = useState<DocumentRead[]>([])
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(false)
+  const [retryKey, setRetryKey] = useState(0)
 
   useEffect(() => {
+    // Don't fetch while collapsed — the effect re-runs when the panel opens.
+    if (!isOpen) return
     let cancelled = false
 
     async function load() {
       const token = await getToken()
       if (!token || cancelled) return
       setLoading(true)
+      setError(false)
       try {
         const docs = await getConversationDocuments(token, conversationId)
         if (!cancelled) setDocuments(docs)
       } catch {
-        // Panel is non-critical — swallow errors silently
+        if (!cancelled) setError(true)
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -46,7 +53,7 @@ export default function DocumentPanel({ conversationId, isOpen, onToggle }: Prop
     return () => {
       cancelled = true
     }
-  }, [conversationId, getToken])
+  }, [conversationId, getToken, isOpen, refreshKey, retryKey])
 
   if (!isOpen) {
     return (
@@ -88,7 +95,22 @@ export default function DocumentPanel({ conversationId, isOpen, onToggle }: Prop
           <p className="px-2 py-2 text-xs text-muted-foreground">Loading…</p>
         )}
 
-        {!loading && documents.length === 0 && (
+        {!loading && error && (
+          <div className="flex flex-col items-center gap-2 px-2 py-4">
+            <p className="text-center text-xs text-muted-foreground">
+              Couldn&apos;t load documents.
+            </p>
+            <button
+              type="button"
+              onClick={() => setRetryKey((k) => k + 1)}
+              className="rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+            >
+              Retry
+            </button>
+          </div>
+        )}
+
+        {!loading && !error && documents.length === 0 && (
           <p className="px-2 py-4 text-center text-xs text-muted-foreground">
             No documents yet.
           </p>

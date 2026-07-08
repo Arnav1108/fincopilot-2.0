@@ -39,14 +39,25 @@ export interface IngestProgress {
   failed: number
 }
 
+/**
+ * One retrieved document chunk, as emitted by the `sources` SSE event
+ * (backend: executor.py emits {"type": "sources", "chunks": ChunkDict[]}).
+ */
 export interface Source {
-  title: string
-  url: string
+  content: string
+  score: number
+  metadata: {
+    chunk_id?: string
+    document_id?: string
+    document_filename?: string
+    document_type?: string
+    [key: string]: unknown
+  }
 }
 
 export interface ToolCall {
   tool_name: string
-  status: "running" | "complete" | "ingesting"
+  status: "running" | "complete" | "ingesting" | "error"
   message?: string
 }
 
@@ -99,18 +110,24 @@ export interface ChartData {
   series: ChartSeries[]
 }
 
+/**
+ * Discriminated union of every SSE event the backend emits on
+ * POST /conversations/{id}/stream. Kept in sync with backend emit_event()
+ * calls (agent/*.py) and _sse() calls (api/v1/chat.py); useStream parses
+ * against these shapes.
+ */
 export type SseEvent =
   | { event: "node_update"; data: { node: string; status: string } }
-  | { event: "tool_call"; data: { tool: string; input: Record<string, unknown> } }
-  | { event: "sources"; data: { sources: Source[] } }
+  | { event: "tool_call"; data: { tool_name: string; step_id?: string; status: ToolCall["status"]; message?: string } }
+  | { event: "sources"; data: { chunks: Source[] } }
   | { event: "token"; data: { token: string } }
-  | { event: "done"; data: { message_id: string | null } }
+  | { event: "done"; data: { message_id: string | null; conversation_id?: string } }
   | { event: "ingest_progress"; data: IngestProgress }
   | { event: "ingest_complete"; data: { document_count: number } }
   | { event: "confirmation_required"; data: ConfirmationRequired }
   | { event: "confirmed"; data: { token: string; answer: string } }
   | { event: "chart_data"; data: ChartData }
-  | { event: "error"; data: { code?: string; message: string; failed_files?: string[]; pending_ids?: string[] } }
+  | { event: "error"; data: { code?: string; message?: string; failed_files?: string[]; pending_ids?: string[] } }
 
 export interface HoldingRead {
   id: string

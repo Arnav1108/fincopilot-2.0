@@ -1,6 +1,12 @@
 import type { ConversationDocumentsResponse, ConversationRead, DocumentRead, HoldingCreate, HoldingRead, MemoryListResponse, MessageRead, PortfolioRead, ProfileRead, ProfileUpdate } from "@/lib/types"
 
-const BASE = process.env.NEXT_PUBLIC_API_URL
+/** Backend origin — the single source of truth for all API calls (fetch + SSE). */
+export const API_BASE = process.env.NEXT_PUBLIC_API_URL
+
+/** Model sent with every /stream request. */
+export const DEFAULT_MODEL = "gpt-4o"
+
+const BASE = API_BASE
 
 export class ApiError extends Error {
   constructor(public readonly status: number, message: string) {

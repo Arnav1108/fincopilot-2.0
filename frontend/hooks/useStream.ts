@@ -1,9 +1,8 @@
 "use client"
 
-import { useCallback, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
+import { API_BASE, DEFAULT_MODEL } from "@/lib/api"
 import type { ChartData, ConfirmationRequired, IngestProgress, Source, ToolCall } from "@/lib/types"
-
-const BASE = process.env.NEXT_PUBLIC_API_URL
 
 interface UseStreamOptions {
   onToken: (token: string) => void
@@ -56,7 +55,17 @@ export default function useStream(options: UseStreamOptions): UseStreamResult {
 
   const stop = useCallback(() => {
     abortRef.current?.abort()
+    abortRef.current = null
     setIsStreaming(false)
+  }, [])
+
+  // Abort any in-flight stream when the owning component unmounts so it
+  // doesn't keep running (and firing stale callbacks) in the background.
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort()
+      abortRef.current = null
+    }
   }, [])
 
   const startStream = useCallback(
@@ -69,12 +78,15 @@ export default function useStream(options: UseStreamOptions): UseStreamResult {
       setIsStreaming(true)
       const controller = new AbortController()
       abortRef.current = controller
+      // The stream must terminate with either a `done` or an `error` event.
+      // EOF without one means the connection dropped mid-response.
+      let settled = false
       try {
         // Always multipart/form-data — backend uses FastAPI Form() params.
         // Do NOT set Content-Type manually; the browser supplies the boundary.
         const body = new FormData()
         body.append("message", message)
-        body.append("model", "gpt-4o")
+        body.append("model", DEFAULT_MODEL)
         if (files?.length) {
           for (const file of files) {
             body.append("files", file, file.name)
@@ -82,7 +94,7 @@ export default function useStream(options: UseStreamOptions): UseStreamResult {
         }
 
         const res = await fetch(
-          `${BASE}/api/v1/conversations/${conversationId}/stream`,
+          `${API_BASE}/api/v1/conversations/${conversationId}/stream`,
           {
             method: "POST",
             headers: { Authorization: `Bearer ${token}` },
@@ -93,6 +105,7 @@ export default function useStream(options: UseStreamOptions): UseStreamResult {
 
         if (!res.ok) {
           const text = await res.text().catch(() => "")
+          settled = true
           onError(new Error(_friendlyHttpError(res.status, text)))
           return
         }
@@ -122,61 +135,89 @@ export default function useStream(options: UseStreamOptions): UseStreamResult {
             } catch {
               continue
             }
+            if (data === null || typeof data !== "object") continue
 
             switch (event) {
               case "node_update":
-                onNodeUpdate(data.node as string)
+                if (typeof data.node === "string") onNodeUpdate(data.node)
                 break
               case "token":
-                onToken(data.token as string)
+                if (typeof data.token === "string") onToken(data.token)
                 break
               case "sources":
-                onSources((data.chunks as Source[]) ?? [])
+                if (Array.isArray(data.chunks)) onSources(data.chunks as Source[])
                 break
               case "done":
-                onDone((data.message_id as string | null) ?? null)
+                settled = true
+                onDone(typeof data.message_id === "string" ? data.message_id : null)
                 break
               case "ingest_progress":
-                onIngestProgress?.(data as unknown as IngestProgress)
+                if (typeof data.total === "number") {
+                  onIngestProgress?.(data as unknown as IngestProgress)
+                }
                 break
               case "ingest_complete":
-                onIngestComplete?.((data.document_count as number) ?? 0)
+                onIngestComplete?.(
+                  typeof data.document_count === "number" ? data.document_count : 0,
+                )
                 break
               case "tool_call":
-                onToolCall?.({
-                  tool_name: data.tool_name as string,
-                  status: data.status as ToolCall["status"],
-                  message: data.message as string | undefined,
-                })
+                if (typeof data.tool_name === "string" && typeof data.status === "string") {
+                  onToolCall?.({
+                    tool_name: data.tool_name,
+                    status: data.status as ToolCall["status"],
+                    message: typeof data.message === "string" ? data.message : undefined,
+                  })
+                }
                 break
               case "confirmation_required":
-                onConfirmationRequired?.(data as unknown as ConfirmationRequired)
+                if (typeof data.token === "string") {
+                  onConfirmationRequired?.(data as unknown as ConfirmationRequired)
+                }
                 break
               case "confirmed":
-                onConfirmed?.(data.token as string, data.answer as string)
+                if (typeof data.token === "string" && typeof data.answer === "string") {
+                  onConfirmed?.(data.token, data.answer)
+                }
                 break
               case "chart_data":
-                onChartData?.(data as unknown as ChartData)
+                if (typeof data.chart_type === "string" && Array.isArray(data.series)) {
+                  onChartData?.(data as unknown as ChartData)
+                }
                 break
               case "error":
+                settled = true
                 onError(
                   new Error(
                     _friendlySseError(
-                      data.code as string | undefined,
-                      data.message as string | undefined,
-                      data.failed_files as string[] | undefined,
+                      typeof data.code === "string" ? data.code : undefined,
+                      typeof data.message === "string" ? data.message : undefined,
+                      Array.isArray(data.failed_files)
+                        ? (data.failed_files as string[])
+                        : undefined,
                     ),
                   ),
                 )
+                // Release the connection — we're done consuming this stream.
+                await reader.cancel().catch(() => {})
                 break outer
             }
           }
+        }
+
+        // EOF without a terminal event: proxy timeout / backend crash mid-stream.
+        if (!settled) {
+          onError(
+            new Error(
+              "Connection lost before the response finished. The partial answer may have been saved — it will appear after reloading.",
+            ),
+          )
         }
       } catch (err) {
         if (err instanceof Error && err.name === "AbortError") return
         onError(err instanceof Error ? err : new Error(String(err)))
       } finally {
-        abortRef.current = null
+        if (abortRef.current === controller) abortRef.current = null
         setIsStreaming(false)
       }
     },
@@ -191,7 +232,9 @@ export default function useStream(options: UseStreamOptions): UseStreamResult {
 function _friendlyHttpError(status: number, body: string): string {
   let detail: string | undefined
   try {
-    detail = JSON.parse(body)?.detail
+    // FastAPI 422s often carry an array of error objects — only surface strings.
+    const raw: unknown = JSON.parse(body)?.detail
+    detail = typeof raw === "string" ? raw : undefined
   } catch {}
 
   if (status === 404) return "Conversation not found."

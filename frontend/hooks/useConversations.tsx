@@ -5,6 +5,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
   type ReactNode,
 } from "react"
@@ -32,10 +33,17 @@ interface ConversationsContextValue {
 const ConversationsContext = createContext<ConversationsContextValue | null>(null)
 
 export function ConversationsProvider({ children }: { children: ReactNode }) {
-  const { getToken } = useAuth()
+  const { getToken, isLoaded } = useAuth()
   const [conversations, setConversations] = useState<ConversationRead[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+
+  // Ref so callbacks always see the current hydration state without
+  // recreating themselves when Clerk finishes loading.
+  const isLoadedRef = useRef(isLoaded)
+  useEffect(() => {
+    isLoadedRef.current = isLoaded
+  }, [isLoaded])
 
   const load = useCallback(async () => {
     try {
@@ -44,6 +52,7 @@ export function ConversationsProvider({ children }: { children: ReactNode }) {
       if (!token) return
       const data = await apiList(token)
       setConversations(data)
+      setError(null)
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load conversations")
     } finally {
@@ -56,13 +65,12 @@ export function ConversationsProvider({ children }: { children: ReactNode }) {
   }, [load])
 
   const create = useCallback(async (): Promise<ConversationRead> => {
-    // Clerk may still be hydrating the session after a page load — poll
-    // briefly for the token rather than failing immediately on null.
-    let token = await getToken()
-    for (let i = 0; i < 10 && !token; i++) {
-      await new Promise((r) => setTimeout(r, 500))
-      token = await getToken()
+    // Clerk may still be hydrating the session after a page load — wait for
+    // isLoaded rather than polling getToken on a fixed timer.
+    for (let i = 0; i < 50 && !isLoadedRef.current; i++) {
+      await new Promise((r) => setTimeout(r, 100))
     }
+    const token = await getToken()
     if (!token) throw new Error("Not authenticated")
     const conv = await apiCreate(token)
     setConversations((prev) => [conv, ...prev])
@@ -103,8 +111,11 @@ export function ConversationsProvider({ children }: { children: ReactNode }) {
       if (!token) return
       const data = await apiList(token)
       setConversations(data)
-    } catch {
-      // best-effort refresh — silently ignore failures
+      setError(null)
+    } catch (e) {
+      // Surface the failure so the sidebar can offer a retry instead of
+      // masquerading as an empty account.
+      setError(e instanceof Error ? e.message : "Failed to load conversations")
     }
   }, [getToken])
 
