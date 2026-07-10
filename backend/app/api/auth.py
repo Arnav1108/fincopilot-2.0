@@ -16,6 +16,8 @@ _jwks_cache: dict | None = None
 _jwks_cache_at: float = 0.0
 _JWKS_TTL = 300.0  # 5 minutes
 
+_LAST_SEEN_STALE_AFTER = 300.0  # 5 minutes
+
 
 async def _get_jwks() -> dict:
     global _jwks_cache, _jwks_cache_at
@@ -70,12 +72,12 @@ async def clerk_auth(request: Request, db: AsyncSession = Depends(get_db)) -> Us
         user = User(clerk_user_id=clerk_user_id)
         db.add(user)
         await db.commit()
-        await db.refresh(user)
         log.info("user_created_via_auth", clerk_user_id=clerk_user_id, user_id=str(user.id))
     else:
-        user.updated_at = datetime.now(timezone.utc)
-        await db.commit()
-        await db.refresh(user)
+        now = datetime.now(timezone.utc)
+        if (now - user.updated_at).total_seconds() >= _LAST_SEEN_STALE_AFTER:
+            user.updated_at = now
+            await db.commit()
 
     # 4. Active check
     if not user.is_active:

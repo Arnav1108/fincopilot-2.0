@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { useAuth } from "@clerk/nextjs"
 import useMessages from "@/hooks/useMessages"
 import useStream from "@/hooks/useStream"
@@ -11,13 +12,23 @@ import InputBar from "@/components/chat/InputBar"
 import DocumentIngestionBanner from "@/components/chat/DocumentIngestionBanner"
 import ConfirmationBanner from "@/components/chat/ConfirmationBanner"
 import DocumentPanel from "@/components/chat/DocumentPanel"
+import TranscriptSkeleton from "@/components/chat/TranscriptSkeleton"
 import { API_BASE, DEFAULT_MODEL } from "@/lib/api"
 import { localId } from "@/lib/utils"
 import type { ChartData, ConfirmationRequired, IngestProgress, Source, ToolCall } from "@/lib/types"
 
 export default function ConversationPage({ params }: { params: { id: string } }) {
   const id = params.id
+  const router = useRouter()
   const { getToken } = useAuth()
+  // Prompt handed off by the empty state via ?q= — read once from the URL
+  // (window, not useSearchParams, to avoid a Suspense boundary requirement).
+  const [initialPrompt] = useState<string | null>(() =>
+    typeof window === "undefined"
+      ? null
+      : new URLSearchParams(window.location.search).get("q"),
+  )
+  const autoSentRef = useRef(false)
   const { messages, isLoading, notFound, error: loadError, load, addMessage } = useMessages()
   const { bumpToTop, refresh } = useConversations()
 
@@ -197,6 +208,15 @@ export default function ConversationPage({ params }: { params: { id: string } })
     [getToken, addMessage, id, startStream, clearStreamingState],
   )
 
+  // Auto-send the empty-state prompt once the transcript has loaded, then
+  // strip ?q= so a reload doesn't re-send it.
+  useEffect(() => {
+    if (!initialPrompt || autoSentRef.current || isLoading || notFound) return
+    autoSentRef.current = true
+    router.replace(`/chat/${id}`, { scroll: false })
+    handleSend(initialPrompt, [])
+  }, [initialPrompt, isLoading, notFound, handleSend, id, router])
+
   if (notFound) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center gap-3">
@@ -224,11 +244,7 @@ export default function ConversationPage({ params }: { params: { id: string } })
   }
 
   if (isLoading) {
-    return (
-      <div className="flex-1 flex items-center justify-center">
-        <span className="text-muted-foreground text-sm">Loading…</span>
-      </div>
-    )
+    return <TranscriptSkeleton />
   }
 
   return (
@@ -242,6 +258,9 @@ export default function ConversationPage({ params }: { params: { id: string } })
           streamingSources={streamingSources}
           isStreaming={isStreaming}
           streamingChartData={streamingChartData}
+          onSuggestion={(prompt) => {
+            if (!isStreaming) handleSend(prompt, [])
+          }}
         />
         {toolCall?.tool_name === "document_finder" &&
           toolCall?.status === "ingesting" && (

@@ -154,6 +154,9 @@ export default function InputBar({
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (disabled) return
+    // Don't submit mid-IME-composition (CJK input): Enter there confirms the
+    // composed text, not the message.
+    if (e.nativeEvent.isComposing) return
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault()
       submit()
@@ -317,7 +320,7 @@ export default function InputBar({
             <button
               type="button"
               onClick={onStop}
-              className="rounded-full p-1.5 transition-colors bg-foreground text-background hover:bg-foreground/90"
+              className="rounded-full p-1.5 transition-colors bg-primary text-primary-foreground hover:bg-primary/90"
               aria-label="Stop generating"
             >
               <Square size={14} fill="currentColor" />
@@ -331,7 +334,7 @@ export default function InputBar({
               className={cn(
                 "rounded-full p-1.5 transition-colors",
                 canSend
-                  ? "bg-foreground text-background hover:bg-foreground/90"
+                  ? "bg-primary text-primary-foreground hover:bg-primary/90"
                   : "cursor-not-allowed text-muted-foreground opacity-50",
               )}
               aria-label="Send message"

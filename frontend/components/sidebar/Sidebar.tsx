@@ -7,27 +7,19 @@ import { UserButton } from "@clerk/nextjs"
 import { useConversations } from "@/hooks/useConversations"
 import ConversationItem from "./ConversationItem"
 import SettingsModal from "@/components/settings/SettingsModal"
+import BrandMark from "@/components/BrandMark"
 
-const USER_BUTTON_APPEARANCE = {
-  variables: {
-    colorText: "#e2e8f0",
-    colorTextSecondary: "#94a3b8",
-    colorBackground: "hsl(var(--card))",
-  },
-  elements: {
-    userButtonPopoverCard: "bg-card border border-border shadow-lg text-foreground",
-    userButtonPopoverMain: "bg-card",
-    userButtonPopoverUserPreview: "bg-card border-b border-border",
-    userButtonPopoverUserPreviewTextContainer: "text-foreground",
-    userButtonPopoverUserPreviewSecondaryIdentifier: "text-foreground/70",
-    userButtonPopoverUserPreviewUnverifiedIdentifier: "text-foreground/70",
-    userButtonPopoverActions: "bg-card",
-    userButtonPopoverActionButton: "text-foreground hover:bg-muted",
-    userButtonPopoverActionButtonText: "text-foreground",
-    userButtonPopoverActionButtonIcon: "text-muted-foreground",
-    userButtonPopoverFooter: "hidden",
-    userButtonPopoverFooterPages: "bg-card",
-  },
+// Clerk popover theming is centralized on ClerkProvider in app/layout.tsx.
+
+function ConversationListSkeleton() {
+  const widths = ["w-11/12", "w-3/4", "w-5/6", "w-2/3", "w-4/5", "w-3/5"]
+  return (
+    <div className="space-y-1.5 px-3 py-2" aria-hidden>
+      {widths.map((w, i) => (
+        <div key={i} className={`h-6 animate-pulse rounded-md bg-muted/60 ${w}`} />
+      ))}
+    </div>
+  )
 }
 
 export default function Sidebar() {
@@ -68,7 +60,8 @@ export default function Sidebar() {
     return (
       <>
         <aside className="flex flex-col w-[52px] shrink-0 h-full bg-background border-r border-border transition-all duration-200">
-          <div className="flex flex-col items-center gap-1 px-1.5 py-3">
+          <div className="flex flex-col items-center gap-2 px-1.5 py-3">
+            <BrandMark size={22} />
             <button
               onClick={() => setIsCollapsed(false)}
               className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
@@ -99,7 +92,7 @@ export default function Sidebar() {
             >
               <Settings size={15} />
             </button>
-            <UserButton appearance={USER_BUTTON_APPEARANCE} />
+            <UserButton />
           </div>
         </aside>
 
@@ -113,7 +106,10 @@ export default function Sidebar() {
       <aside className="flex flex-col w-[260px] shrink-0 h-full bg-background border-r border-border transition-all duration-200">
         {/* Header */}
         <div className="flex items-center justify-between px-3 py-3">
-          <span className="font-semibold text-sm text-foreground">FinCopilot</span>
+          <span className="flex items-center gap-2">
+            <BrandMark size={20} />
+            <span className="font-semibold text-sm tracking-tight text-foreground">FinCopilot</span>
+          </span>
           <div className="flex items-center gap-1">
             <button
               onClick={() => {
@@ -151,10 +147,10 @@ export default function Sidebar() {
         )}
 
         {/* Conversation list */}
-        <div data-testid="conversation-list" className="flex-1 overflow-y-auto px-2 py-1 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border [&::-webkit-scrollbar-track]:transparent">
+        <div data-testid="conversation-list" className="flex-1 overflow-y-auto px-2 py-1 scrollbar-thin">
           {(() => {
             if (isLoading) {
-              return <p className="px-3 py-2 text-xs text-muted-foreground">Loading…</p>
+              return <ConversationListSkeleton />
             }
             if (error && conversations.length === 0) {
               return (
@@ -214,7 +210,7 @@ export default function Sidebar() {
           </button>
 
           <div className="px-3 py-2 mb-2">
-            <UserButton appearance={USER_BUTTON_APPEARANCE} />
+            <UserButton />
           </div>
         </div>
       </aside>

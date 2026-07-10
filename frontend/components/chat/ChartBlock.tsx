@@ -9,6 +9,7 @@ import {
   PieChart,
   Pie,
   Cell,
+  CartesianGrid,
   XAxis,
   YAxis,
   Tooltip,
@@ -52,6 +53,16 @@ interface Props {
 
 export default function ChartBlock({ data }: Props) {
   if (!data) return null
+
+  // An empty series list would otherwise render a bare axis frame
+  if (!data.series.some((s) => s.data.length > 0)) {
+    return (
+      <div className="mt-3 rounded-lg border border-border bg-muted/20 p-4">
+        <p className="mb-1 text-sm font-semibold text-foreground">{data.title}</p>
+        <p className="text-sm text-muted-foreground">No data to chart.</p>
+      </div>
+    )
+  }
 
   // Pivot series format → flat record array for line/bar: [{x, seriesName: value, ...}]
   const flatData = (() => {
@@ -110,6 +121,7 @@ export default function ChartBlock({ data }: Props) {
             </PieChart>
           ) : data.chart_type === "line" ? (
             <LineChart data={flatData} margin={{ bottom: 24, left: 10, right: 10 }}>
+              <CartesianGrid stroke="hsl(var(--border))" strokeDasharray="3 3" vertical={false} />
               <XAxis
                 dataKey="x"
                 tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
@@ -157,6 +169,7 @@ export default function ChartBlock({ data }: Props) {
             </LineChart>
           ) : (
             <BarChart data={flatData} margin={{ bottom: 24, left: 10, right: 10 }}>
+              <CartesianGrid stroke="hsl(var(--border))" strokeDasharray="3 3" vertical={false} />
               <XAxis
                 dataKey="x"
                 tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}

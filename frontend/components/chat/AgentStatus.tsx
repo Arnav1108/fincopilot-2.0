@@ -72,21 +72,21 @@ export default function AgentStatus({ node, toolCall }: Props) {
             <div className="flex flex-col items-center" style={{ width: 16 }}>
               {isActive ? (
                 <div className="relative flex items-center justify-center">
-                  <div className="h-2.5 w-2.5 rounded-full bg-orange-500" />
-                  <div className="absolute h-2.5 w-2.5 rounded-full bg-orange-500 animate-ping opacity-75" />
+                  <div className="h-2.5 w-2.5 rounded-full bg-primary" />
+                  <div className="absolute h-2.5 w-2.5 rounded-full bg-primary animate-ping opacity-75" />
                 </div>
               ) : (
-                <div className="h-2.5 w-2.5 rounded-full bg-orange-500/80" />
+                <div className="h-2.5 w-2.5 rounded-full bg-primary/70" />
               )}
               {!isLastRendered && (
-                <div className="w-px flex-1 bg-orange-500/30 mt-0.5" style={{ minHeight: 16 }} />
+                <div className="w-px flex-1 bg-primary/30 mt-0.5" style={{ minHeight: 16 }} />
               )}
             </div>
             <div className="pb-3">
               <span
                 className={cn(
                   "text-xs font-medium",
-                  isActive ? "text-orange-400" : "text-muted-foreground",
+                  isActive ? "text-primary" : "text-muted-foreground",
                 )}
               >
                 {pipelineNode.label}

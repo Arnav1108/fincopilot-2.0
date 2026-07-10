@@ -124,6 +124,22 @@ function TableCell({ children }: { children?: React.ReactNode }) {
   )
 }
 
+// ── thinking indicator ────────────────────────────────────────────────────────
+
+function ThinkingDots() {
+  return (
+    <span
+      className="inline-flex items-center gap-1 py-1.5"
+      role="status"
+      aria-label="Assistant is thinking"
+    >
+      <span className="h-1.5 w-1.5 animate-thinking rounded-full bg-muted-foreground" />
+      <span className="h-1.5 w-1.5 animate-thinking rounded-full bg-muted-foreground [animation-delay:200ms]" />
+      <span className="h-1.5 w-1.5 animate-thinking rounded-full bg-muted-foreground [animation-delay:400ms]" />
+    </span>
+  )
+}
+
 // ── MessageBubble ─────────────────────────────────────────────────────────────
 
 interface Props {
@@ -170,7 +186,7 @@ function MessageBubble({
         )}
       >
         {isEmpty
-          ? "…"
+          ? <ThinkingDots />
           : (
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
