@@ -243,46 +243,48 @@ export default function ConversationPage({ params }: { params: { id: string } })
     )
   }
 
-  if (isLoading) {
-    return <TranscriptSkeleton />
-  }
-
   return (
     <div className="flex-1 flex min-h-0">
       <div className="flex-1 flex flex-col min-h-0">
-        <MessageList
-          messages={messages}
-          streamingContent={streamingContent}
-          agentStatus={agentStatus}
-          toolCall={toolCall}
-          streamingSources={streamingSources}
-          isStreaming={isStreaming}
-          streamingChartData={streamingChartData}
-          onSuggestion={(prompt) => {
-            if (!isStreaming) handleSend(prompt, [])
-          }}
-        />
-        {toolCall?.tool_name === "document_finder" &&
-          toolCall?.status === "ingesting" && (
-            <DocumentIngestionBanner
-              message={toolCall.message ?? "Ingesting document..."}
-              tool_name={toolCall.tool_name}
+        {isLoading ? (
+          <TranscriptSkeleton />
+        ) : (
+          <>
+            <MessageList
+              messages={messages}
+              streamingContent={streamingContent}
+              agentStatus={agentStatus}
+              toolCall={toolCall}
+              streamingSources={streamingSources}
+              isStreaming={isStreaming}
+              streamingChartData={streamingChartData}
+              onSuggestion={(prompt) => {
+                if (!isStreaming) handleSend(prompt, [])
+              }}
             />
-          )}
-        {confirmationRequest && (
-          <ConfirmationBanner
-            request={confirmationRequest}
-            onConfirm={() => sendConfirmation("yes", confirmationRequest.token)}
-            onCancel={() => sendConfirmation("no", confirmationRequest.token)}
-          />
+            {toolCall?.tool_name === "document_finder" &&
+              toolCall?.status === "ingesting" && (
+                <DocumentIngestionBanner
+                  message={toolCall.message ?? "Ingesting document..."}
+                  tool_name={toolCall.tool_name}
+                />
+              )}
+            {confirmationRequest && (
+              <ConfirmationBanner
+                request={confirmationRequest}
+                onConfirm={() => sendConfirmation("yes", confirmationRequest.token)}
+                onCancel={() => sendConfirmation("no", confirmationRequest.token)}
+              />
+            )}
+            <InputBar
+              onSend={handleSend}
+              onStop={handleStop}
+              disabled={isStreaming}
+              ingestProgress={ingestProgress}
+              streamError={streamError}
+            />
+          </>
         )}
-        <InputBar
-          onSend={handleSend}
-          onStop={handleStop}
-          disabled={isStreaming}
-          ingestProgress={ingestProgress}
-          streamError={streamError}
-        />
       </div>
       <DocumentPanel
         conversationId={id}
