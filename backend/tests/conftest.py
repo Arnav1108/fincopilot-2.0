@@ -3,6 +3,7 @@ import sys
 import uuid
 
 import pytest
+import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import delete, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -32,7 +33,7 @@ _TestSession = async_sessionmaker(_engine, class_=AsyncSession, expire_on_commit
 
 # ── Session-level table setup ──────────────────────────────────────────────
 
-@pytest.fixture(scope="session", autouse=True)
+@pytest_asyncio.fixture(scope="session", loop_scope="session", autouse=True)
 async def setup_test_db():
     async with _engine.begin() as conn:
         await conn.execute(text("DROP SCHEMA IF EXISTS public CASCADE"))
@@ -76,6 +77,7 @@ async def test_user(db: AsyncSession):
     db.add(user)
     await db.commit()
     await db.refresh(user)
+    await db.commit()
     yield user
     await db.execute(delete(User).where(User.id == user.id))
     await db.commit()
@@ -87,6 +89,7 @@ async def test_user_2(db: AsyncSession):
     db.add(user)
     await db.commit()
     await db.refresh(user)
+    await db.commit()
     yield user
     await db.execute(delete(User).where(User.id == user.id))
     await db.commit()
