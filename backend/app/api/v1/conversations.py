@@ -103,22 +103,23 @@ async def list_messages(
     user: User = Depends(clerk_auth),
     db: AsyncSession = Depends(get_db),
 ):
-    stmt = select(Conversation).where(
-        Conversation.id == conversation_id,
-        Conversation.user_id == user.id,
-        Conversation.deleted_at.is_(None),
-    )
-    result = await db.execute(stmt)
-    conv = result.scalar_one_or_none()
-    if conv is None:
-        logger.warning("conversation_not_found", conversation_id=str(conversation_id), user_id=str(user.id))
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
-    msg_result = await db.execute(
-        select(Message)
-        .where(Message.conversation_id == conversation_id)
+    stmt = (
+        select(Conversation.id, Message)
+        .select_from(Conversation)
+        .outerjoin(Message, Message.conversation_id == Conversation.id)
+        .where(
+            Conversation.id == conversation_id,
+            Conversation.user_id == user.id,
+            Conversation.deleted_at.is_(None),
+        )
         .order_by(Message.created_at.asc())
     )
-    return [MessageRead.model_validate(m) for m in msg_result.scalars().all()]
+    result = await db.execute(stmt)
+    rows = result.all()
+    if not rows:
+        logger.warning("conversation_not_found", conversation_id=str(conversation_id), user_id=str(user.id))
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    return [MessageRead.model_validate(m) for _, m in rows if m is not None]
 
 
 @router.get("/{conversation_id}/documents", response_model=DocumentListResponse)
